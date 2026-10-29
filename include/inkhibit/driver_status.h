@@ -15,6 +15,9 @@ extern "C" {
 int inkhibit_driver_error(void);
 const char *inkhibit_driver_error_message(void);
 
+/* Records the first error only. Copies the supplied message. */
+void inkhibit_driver_fail(int code, const char *message);
+
 /*
  * Records the first error only. Copies the supplied message.
  */
