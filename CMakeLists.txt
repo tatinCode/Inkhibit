@@ -17,7 +17,7 @@ if(INKHIBIT_BUILD_HARDWARE)
     )
 
     add_library(inkhibit_driver STATIC
-        src/hardware/waveshare_lgpio.c
+        src/waveshare_lgpio.c
         "${WAVESHARE_DIR}/e-Paper/EPD_4in0e.c"
     )
 
