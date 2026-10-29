@@ -13,7 +13,7 @@ if(INKHIBIT_BUILD_HARDWARE)
     find_library(LGPIO_LIBRARY NAMES lgpio REQUIRED)
 
     set(WAVESHARE_DIR
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/waveshare/c/lib"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/waveshare/lib"
     )
 
     add_library(inkhibit_driver STATIC
