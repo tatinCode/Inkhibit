@@ -31,6 +31,24 @@
 #include "EPD_4in0e.h"
 #include "Debug.h"
 
+/**
+ * Inkhibit driver checker error
+ *
+ * Created by: tatinCode 10/28/2026
+ */
+#ifdef INKHIBIT_CHECKED_DRIVER
+#include "inkhibit/driver_status.h"
+#endif
+
+static int EPD_4IN0E_HasError(void)
+{
+#ifdef INKHIBIT_CHECKED_DRIVER
+    return inkhibit_driver_error() != 0;
+#else
+    return 0;
+#endif
+}
+
 /******************************************************************************
 function :  Software reset
 parameter:
@@ -361,25 +379,7 @@ void EPD_4IN0E_Sleep(void)
      * Preserves the 2 second delay used by the official example
      * before a module shutdown
      */
-    DEV_Delay_(2 * 1000);
-#endif
-}
-
-/**
- * Inkhibit driver checker error
- *
- * Created by: tatinCode 10/28/2026
- */
-#ifdef INKHIBIT_CHECKED_DRIVER
-#inlcude "inkhibit/driver_status.h"
-#endif
-
-static int EPD_4IN0E_HasError(void)
-{
-#ifdef INKHIBIT_CHECKED_DRIVER
-    return inkhibit_driver_error() != 0;
-#else
-    return 0;
+    DEV_Delay_ms(2 * 1000);
 #endif
 }
 
