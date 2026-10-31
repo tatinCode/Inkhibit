@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Inkhibit — Your personal gallery</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./app.js" defer></script>
+</head>
+<body class="locked">
+  <section id="login-screen" class="login-screen" aria-labelledby="login-title">
+    <aside class="login-art" aria-hidden="true">
+      <span class="brand">Inkhibit<span>.</span></span>
+      <div class="login-artwork">
+        <div class="abstract-art"><span></span><span></span><span></span></div>
+      </div>
+      <div class="login-art-caption">
+        <p class="eyebrow">An exhibition of your own</p>
+        <p>Good art.<br>A little more time.</p>
+        <span>Six colors. Endless stories.</span>
+      </div>
+    </aside>
+    <form id="login-form" class="login-card" inert>
+      <span class="badge">Frontend preview</span>
+      <p class="eyebrow">Your personal gallery</p>
+      <h1 id="login-title">Welcome<br>to your quiet corner.</h1>
+      <p class="muted">A space for the pictures you want to live with.</p>
+
+      <label for="login-name">Username</label>
+      <input
+        id="login-name"
+        name="username"
+        type="text"
+        autocomplete="username"
+        value="owner"
+        maxlength="80"
+        required
+      >
+
+      <label for="login-password">Password</label>
+      <input
+        id="login-password"
+        name="password"
+        type="password"
+        autocomplete="current-password"
+        required
+      >
+
+      <button type="submit" class="button primary">
+        Enter your gallery <span aria-hidden="true">↗</span>
+      </button>
+
+      <p class="demo-warning">
+        Frontend demo: any username and password work.
+        This screen does not provide real security.
+      </p>
+    </form>
+  </section>
+
+  <header class="header">
+      <a class="brand" href="#collection-title">Inkhibit<span>.</span></a>
+      <nav class="header-nav" aria-label="Main navigation">
+        <a href="#collection-title">Collection</a>
+        <a href="#editor-title">Add artwork</a>
+      </nav>
+      <div class="header-actions">
+        <span class="badge"><span class="status-dot" aria-hidden="true"></span> Browser demo</span>
+      <button id="logout" type="button" class="button secondary">
+          Log out
+      </button>
+      </div>
+  </header>
+
+  <main>
+    <section class="intro">
+      <div>
+      <p class="eyebrow">A little gallery. Entirely yours.</p>
+      <h1>Make room for art.</h1>
+      <p class="muted">
+        Your favorite moments, with a little room to breathe.
+      </p>
+      </div>
+      <a class="button primary" href="#editor-title">Add artwork <span aria-hidden="true">＋</span></a>
+    </section>
+
+    <section class="collection-panel" aria-labelledby="collection-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">01 / On the wall</p>
+          <h2 id="collection-title">Your current exhibition</h2>
+        </div>
+        <span id="collection-count" class="badge">0 artworks</span>
+      </div>
+
+      <div class="collection-layout">
+        <div class="collection-stage">
+          <div class="collection-wall">
+            <div class="frame">
+              <div class="artwork">
+                <img id="collection-preview" alt="" hidden>
+                <div id="collection-empty" class="empty-state">
+                  <span class="empty-icon" aria-hidden="true">✳</span>
+                  <p>Every gallery starts with one piece.</p>
+                  <span>Add your first artwork below.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="collection-caption">
+            <div>
+              <h3 id="collection-current-name">A space for something beautiful</h3>
+              <p id="collection-current-details" class="muted">Your collection is waiting to begin.</p>
+            </div>
+            <span class="edition">THE PERSONAL COLLECTION</span>
+          </div>
+        </div>
+
+        <aside class="exhibition-controls" aria-label="Exhibition controls">
+          <section class="card slideshow-card" aria-labelledby="slideshow-title">
+            <p class="eyebrow">Take it slow</p>
+            <h2 id="slideshow-title">A new perspective.<br>Every few minutes.</h2>
+            <p class="muted">Let your collection unfold, one piece at a time.</p>
+
+            <label for="slideshow-interval">Change artwork every</label>
+            <select id="slideshow-interval">
+              <option value="180">3 minutes</option>
+              <option value="300" selected>5 minutes</option>
+              <option value="600">10 minutes</option>
+            </select>
+
+            <button id="slideshow-toggle" type="button" class="button primary" disabled>
+              Start slideshow
+            </button>
+            <p id="slideshow-status" class="slideshow-status">Add two artworks to start a slideshow.</p>
+            <p class="preview-note">Browser simulation only. No physical frame is updated.</p>
+          </section>
+
+          <section class="card device-card">
+            <div class="device-heading">
+              <h2>Your frame</h2>
+              <span class="device-status"><span aria-hidden="true"></span> Not connected</span>
+            </div>
+            <p class="muted">Your gallery lives in this browser tab for now. Frame connectivity comes later.</p>
+            <button type="button" class="button secondary" disabled>Display on frame</button>
+          </section>
+        </aside>
+      </div>
+
+      <div class="collection-list-heading">
+        <h3>The collection</h3>
+        <span class="muted">Select a piece to preview it</span>
+      </div>
+      <div id="collection-grid" class="collection-grid" aria-label="Artwork collection"></div>
+      <p id="collection-list-empty" class="collection-list-empty">Nothing here just yet. Your next favorite is a few clicks away.</p>
+      <div id="collection-pagination" class="gallery-pagination" hidden>
+        <div class="pagination-info">
+          <p id="pagination-summary" role="status" aria-live="polite" aria-atomic="true"></p>
+          <p id="pagination-range" class="muted"></p>
+        </div>
+        <nav id="collection-page-navigation" class="pagination-navigation" aria-label="Collection pages">
+          <div class="pagination-directions">
+            <button id="page-first" type="button" class="button secondary" aria-controls="collection-grid" disabled>First</button>
+            <button id="page-previous" type="button" class="button secondary" aria-controls="collection-grid" disabled>Previous</button>
+          </div>
+          <div id="page-numbers" class="page-numbers"></div>
+          <div class="pagination-directions">
+            <button id="page-next" type="button" class="button secondary" aria-controls="collection-grid" disabled>Next</button>
+            <button id="page-last" type="button" class="button secondary" aria-controls="collection-grid" disabled>Last</button>
+          </div>
+        </nav>
+        <form id="page-jump-form" class="page-jump-form" novalidate>
+          <label for="page-jump">Go to page</label>
+          <input id="page-jump" name="page" type="number" min="1" max="1" step="1" value="1" inputmode="numeric" aria-describedby="pagination-summary" required>
+          <button type="submit" class="button secondary" aria-controls="collection-grid">Go</button>
+        </form>
+      </div>
+      <p id="gallery-feedback" class="feedback" role="status" aria-live="polite"></p>
+      <p class="preview-note">Demo collection · 24 artworks per page · Limited by browser memory · Reloading this page clears your images.</p>
+    </section>
+
+    <section class="editor-section" aria-labelledby="editor-title">
+      <div class="section-heading editor-heading">
+        <div>
+          <p class="eyebrow">02 / Something new</p>
+          <h2 id="editor-title">Prepare your next piece</h2>
+        </div>
+        <span class="muted">JPG & PNG · Everything stays in your browser</span>
+      </div>
+    <div class="dashboard">
+      <section class="gallery" aria-labelledby="preview-title">
+        <div class="section-heading">
+          <h3 id="preview-title" class="editor-preview-title">The artist’s proof</h3>
+          <span class="muted">600 × 400</span>
+        </div>
+
+        <div class="gallery-wall">
+          <div class="frame">
+            <div class="artwork">
+              <canvas
+                id="preview"
+                width="600"
+                height="400"
+                aria-label="Processed six-color artwork preview"
+                hidden
+              >
+                Your browser needs canvas support to preview artwork.
+              </canvas>
+
+              <div id="empty-state" class="empty-state">
+                <span class="empty-icon" aria-hidden="true">✳</span>
+                <p>A space for something beautiful.</p>
+                <span>Choose an image to begin.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="caption">
+          <div>
+            <h3 id="artwork-name">Untitled, for now</h3>
+            <p id="artwork-details" class="muted">
+              Your artwork will appear here.
+            </p>
+          </div>
+          <span class="edition">INKHIBIT / 001</span>
+        </div>
+
+        <p class="preview-note">
+          Simulated six-color preview. Physical e-ink colors will differ.
+        </p>
+      </section>
+
+      <aside class="controls" aria-label="Artwork controls">
+        <section class="card">
+          <p class="eyebrow">Choose a moment</p>
+          <h2>Choose your artwork</h2>
+
+          <div id="dropzone" class="dropzone">
+            <p>Drop something inspiring.</p>
+            <span class="muted">JPG or PNG · up to 20 MB</span>
+            <button id="choose-file" type="button" class="button secondary">
+              Choose image
+            </button>
+            <input
+              id="file-input"
+              type="file"
+              accept="image/jpeg,image/png"
+              hidden
+            >
+          </div>
+
+          <p id="feedback" class="feedback" role="status" aria-live="polite">
+            Images stay in your browser.
+          </p>
+        </section>
+
+        <section class="card">
+          <p class="eyebrow">Make it yours</p>
+          <h2>Find the right balance</h2>
+
+          <label for="fit">Image placement</label>
+          <select id="fit">
+            <option value="cover">Fill frame — crop edges</option>
+            <option value="contain">Fit image — preserve edges</option>
+          </select>
+
+          <label for="dither">Color treatment</label>
+          <select id="dither">
+            <option value="floyd-steinberg">Floyd–Steinberg dithering</option>
+            <option value="none">Nearest color — no dithering</option>
+          </select>
+
+          <div class="palette" aria-label="Black, white, yellow, red, blue and green">
+            <span style="--swatch: #151515"></span>
+            <span style="--swatch: #ffffff"></span>
+            <span style="--swatch: #e5bc35"></span>
+            <span style="--swatch: #b94038"></span>
+            <span style="--swatch: #385c95"></span>
+            <span style="--swatch: #52745a"></span>
+            <small>Six colors. Plenty of possibilities.</small>
+          </div>
+
+          <button id="add-to-gallery" type="button" class="button primary" disabled>
+            Add to gallery <span aria-hidden="true">＋</span>
+          </button>
+          <button id="save-preview" type="button" class="button secondary" disabled>
+            Save preview
+          </button>
+        </section>
+
+      </aside>
+    </div>
+    </section>
+  </main>
+
+  <footer>
+    Made for slower spaces.
+    <span>Inkhibit · Frontend prototype</span>
+  </footer>
+
+  <dialog id="delete-dialog" aria-labelledby="delete-title" aria-describedby="delete-description">
+    <form method="dialog" class="delete-dialog-content">
+      <p class="eyebrow">A little room for something new</p>
+      <h2 id="delete-title">Remove this artwork?</h2>
+      <p id="delete-description" class="muted"></p>
+      <div class="dialog-actions">
+        <button id="cancel-delete" type="submit" value="cancel" class="button secondary" autofocus>Keep artwork</button>
+        <button id="confirm-delete" type="submit" value="delete" class="button danger">Remove artwork</button>
+      </div>
+    </form>
+  </dialog>
+  <noscript><p class="noscript-message">This frontend prototype needs JavaScript to open the gallery and process images.</p></noscript>
+</body>
+</html>
