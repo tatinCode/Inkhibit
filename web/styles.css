@@ -808,6 +808,101 @@ body.locked > footer {
   text-align: center;
 }
 
+.gallery-pagination {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.pagination-info p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.pagination-info .muted {
+  margin-top: 3px;
+  font-size: 11px;
+}
+
+.pagination-navigation {
+  display: flex;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pagination-directions,
+.page-numbers {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.page-numbers {
+  flex-wrap: wrap;
+}
+
+.page-number {
+  min-width: 36px;
+  padding-inline: 8px;
+}
+
+.page-number[aria-current="page"] {
+  border-color: var(--accent);
+  color: white;
+  background: var(--accent);
+}
+
+.page-number[aria-current="page"]:hover {
+  color: white;
+  background: #3d4c34;
+}
+
+.pagination-ellipsis {
+  padding-inline: 4px;
+  color: var(--muted);
+}
+
+.page-jump-form {
+  display: flex;
+  grid-column: 2;
+  grid-row: 1;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-jump-form label {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.page-jump-form input {
+  width: 80px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.page-jump-form input[aria-invalid="true"] {
+  border-color: #9c3c31;
+}
+
 .editor-preview-title {
   font-family: inherit;
   font-size: 13px;
@@ -933,6 +1028,45 @@ dialog::backdrop {
   .collection-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
+  }
+
+  .gallery-pagination {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    padding: 16px;
+  }
+
+  .pagination-navigation {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px 8px;
+  }
+
+  .pagination-directions:first-child {
+    grid-column: 1;
+    grid-row: 1;
+    justify-content: start;
+  }
+
+  .pagination-directions:last-child {
+    grid-column: 2;
+    grid-row: 1;
+    justify-content: end;
+  }
+
+  .pagination-directions .button {
+    padding-inline: 10px;
+  }
+
+  .page-numbers {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .page-jump-form {
+    grid-column: 1;
+    grid-row: 3;
+    justify-content: center;
   }
 
   .editor-section .gallery-wall {

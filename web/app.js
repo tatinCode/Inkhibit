@@ -43,6 +43,16 @@ const slideshowInterval = document.querySelector("#slideshow-interval");
 const slideshowStatus = document.querySelector("#slideshow-status");
 const deleteDialog = document.querySelector("#delete-dialog");
 const deleteDescription = document.querySelector("#delete-description");
+const collectionPagination = document.querySelector("#collection-pagination");
+const paginationSummary = document.querySelector("#pagination-summary");
+const paginationRange = document.querySelector("#pagination-range");
+const firstPageButton = document.querySelector("#page-first");
+const previousPageButton = document.querySelector("#page-previous");
+const nextPageButton = document.querySelector("#page-next");
+const lastPageButton = document.querySelector("#page-last");
+const pageNumbers = document.querySelector("#page-numbers");
+const pageJumpForm = document.querySelector("#page-jump-form");
+const pageJumpInput = document.querySelector("#page-jump");
 
 const context = canvas.getContext("2d");
 
@@ -68,16 +78,17 @@ let selectedArtworkId = null;
 let pendingDeleteId = null;
 let slideshowTimer = null;
 let nextChangeAt = 0;
+let collectionPage = 1;
 
 // Processed snapshots only: originals are not retained in the demo collection.
 // Reloading clears the collection. This will be replaced by the C++ backend.
 const collection = [];
-const MAX_ARTWORKS = 30;
+const ARTWORKS_PER_PAGE = 24;
 
 function syncEditorControls() {
   const ready = signedIn && previewReady && !loadingImage;
   saveButton.disabled = !ready;
-  addButton.disabled = !ready || addingArtwork || collection.length >= MAX_ARTWORKS;
+  addButton.disabled = !ready || addingArtwork;
   addButton.textContent = addingArtwork ? "Adding artwork…" : "Add to gallery ＋";
   fitSelect.disabled = !signedIn || loadingImage || !sourceImage;
   ditherSelect.disabled = fitSelect.disabled;
@@ -444,12 +455,123 @@ function requestDelete(id) {
   deleteDialog.showModal();
 }
 
+function collectionPageCount() {
+  return Math.max(1, Math.ceil(collection.length / ARTWORKS_PER_PAGE));
+}
+
+function renderPagination() {
+  const totalPages = collectionPageCount();
+  collectionPagination.hidden = collection.length === 0;
+  paginationSummary.textContent = `Page ${collectionPage} of ${totalPages} · ${collection.length} artwork${collection.length === 1 ? "" : "s"}`;
+  const firstArtwork = (collectionPage - 1) * ARTWORKS_PER_PAGE + 1;
+  const lastArtwork = Math.min(collectionPage * ARTWORKS_PER_PAGE, collection.length);
+  paginationRange.textContent = collection.length === 0
+    ? "No artworks yet."
+    : `Showing ${firstArtwork}–${lastArtwork} · ${ARTWORKS_PER_PAGE} per page`;
+  firstPageButton.disabled = previousPageButton.disabled = collectionPage === 1;
+  lastPageButton.disabled = nextPageButton.disabled = collectionPage === totalPages;
+  pageJumpInput.max = totalPages;
+  pageJumpInput.value = collectionPage;
+  pageJumpInput.setCustomValidity("");
+  pageJumpInput.removeAttribute("aria-invalid");
+  pageNumbers.replaceChildren();
+
+  // A bounded window of shortcuts, even for collections with many pages.
+  const shortcuts = new Set([1, totalPages]);
+  const start = collectionPage <= 4 ? 2 : Math.max(2, collectionPage - 1);
+  const end = collectionPage >= totalPages - 3
+    ? totalPages - 1
+    : Math.min(totalPages - 1, Math.max(5, collectionPage + 1));
+  const windowStart = collectionPage >= totalPages - 3
+    ? Math.max(2, Math.min(start, totalPages - 4))
+    : start;
+
+  for (let page = windowStart; page <= end; page++) shortcuts.add(page);
+
+  function appendPageButton(page) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "button secondary page-number";
+    button.textContent = page;
+    button.dataset.page = page;
+    button.setAttribute("aria-label", `Page ${page}`);
+    button.setAttribute("aria-controls", "collection-grid");
+    if (page === collectionPage) button.setAttribute("aria-current", "page");
+    pageNumbers.append(button);
+  }
+
+  let previous = 0;
+  for (const page of [...shortcuts].sort((a, b) => a - b)) {
+    if (page - previous === 2) {
+      appendPageButton(previous + 1);
+    } else if (page - previous > 2) {
+      const ellipsis = document.createElement("span");
+      ellipsis.className = "pagination-ellipsis";
+      ellipsis.textContent = "…";
+      ellipsis.setAttribute("aria-hidden", "true");
+      pageNumbers.append(ellipsis);
+    }
+    appendPageButton(page);
+    previous = page;
+  }
+}
+
+function goToCollectionPage(page) {
+  if (!signedIn || !Number.isSafeInteger(page) || page < 1 || page > collectionPageCount()) return;
+  if (page === collectionPage) return;
+
+  const focusedControl = document.activeElement;
+  const focusCurrentPage = pageNumbers.contains(focusedControl);
+  collectionPage = page;
+  renderCollection();
+
+  // Number shortcuts are recreated; keep keyboard focus inside the navigation.
+  if (focusCurrentPage || focusedControl?.disabled) {
+    pageNumbers.querySelector('[aria-current="page"]').focus({ preventScroll: true });
+  }
+}
+
+firstPageButton.addEventListener("click", () => goToCollectionPage(1));
+previousPageButton.addEventListener("click", () => goToCollectionPage(collectionPage - 1));
+nextPageButton.addEventListener("click", () => goToCollectionPage(collectionPage + 1));
+lastPageButton.addEventListener("click", () => goToCollectionPage(collectionPageCount()));
+pageNumbers.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-page]");
+  if (button) goToCollectionPage(Number(button.dataset.page));
+});
+
+pageJumpInput.addEventListener("input", () => {
+  pageJumpInput.setCustomValidity("");
+  pageJumpInput.removeAttribute("aria-invalid");
+});
+
+pageJumpForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!signedIn) return;
+  const page = pageJumpInput.valueAsNumber;
+  pageJumpInput.setCustomValidity("");
+
+  if (!Number.isSafeInteger(page) || page < 1 || page > collectionPageCount()) {
+    pageJumpInput.setCustomValidity(`Enter a whole page number from 1 to ${collectionPageCount()}.`);
+    pageJumpInput.setAttribute("aria-invalid", "true");
+    pageJumpInput.reportValidity();
+    return;
+  }
+
+  pageJumpInput.removeAttribute("aria-invalid");
+  goToCollectionPage(page);
+  // Normalize valid alternative number representations, including leading zeros.
+  pageJumpInput.value = collectionPage;
+});
+
 function renderCollection() {
+  collectionPage = Math.max(1, Math.min(collectionPage, collectionPageCount()));
   collectionCount.textContent = `${collection.length} artwork${collection.length === 1 ? "" : "s"}`;
   collectionListEmpty.hidden = collection.length > 0;
   collectionGrid.replaceChildren();
 
-  for (const artwork of collection) {
+  const start = (collectionPage - 1) * ARTWORKS_PER_PAGE;
+  for (const artwork of collection.slice(start, start + ARTWORKS_PER_PAGE)) {
     const card = document.createElement("article");
     card.className = "collection-item";
     card.dataset.artworkId = artwork.id;
@@ -491,6 +613,7 @@ function renderCollection() {
 
   slideshowButton.disabled = collection.length < 2;
   if (collection.length < 2) pauseSlideshow();
+  renderPagination();
   updateSelection();
   syncEditorControls();
 }
@@ -519,10 +642,6 @@ deleteDialog.addEventListener("close", () => {
 
 addButton.addEventListener("click", () => {
   if (!signedIn || !previewReady || loadingImage || addingArtwork) return;
-  if (collection.length >= MAX_ARTWORKS) {
-    setFeedback("The demo collection is full. Remove an artwork to make space.", true);
-    return;
-  }
 
   addingArtwork = true;
   syncEditorControls();
@@ -550,6 +669,8 @@ addButton.addEventListener("click", () => {
 
     collection.push(artwork);
     if (selectedArtworkId === null) selectedArtworkId = artwork.id;
+    // Reveal the new snapshot without changing the exhibited artwork or slideshow.
+    collectionPage = collectionPageCount();
     renderCollection();
     setFeedback(`“${name}” added to your gallery. Prepare another piece or explore your collection above.`);
     galleryFeedback.textContent = `“${name}” added to the demo collection.`;

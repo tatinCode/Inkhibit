@@ -153,8 +153,30 @@
       </div>
       <div id="collection-grid" class="collection-grid" aria-label="Artwork collection"></div>
       <p id="collection-list-empty" class="collection-list-empty">Nothing here just yet. Your next favorite is a few clicks away.</p>
+      <div id="collection-pagination" class="gallery-pagination" hidden>
+        <div class="pagination-info">
+          <p id="pagination-summary" role="status" aria-live="polite" aria-atomic="true"></p>
+          <p id="pagination-range" class="muted"></p>
+        </div>
+        <nav id="collection-page-navigation" class="pagination-navigation" aria-label="Collection pages">
+          <div class="pagination-directions">
+            <button id="page-first" type="button" class="button secondary" aria-controls="collection-grid" disabled>First</button>
+            <button id="page-previous" type="button" class="button secondary" aria-controls="collection-grid" disabled>Previous</button>
+          </div>
+          <div id="page-numbers" class="page-numbers"></div>
+          <div class="pagination-directions">
+            <button id="page-next" type="button" class="button secondary" aria-controls="collection-grid" disabled>Next</button>
+            <button id="page-last" type="button" class="button secondary" aria-controls="collection-grid" disabled>Last</button>
+          </div>
+        </nav>
+        <form id="page-jump-form" class="page-jump-form" novalidate>
+          <label for="page-jump">Go to page</label>
+          <input id="page-jump" name="page" type="number" min="1" max="1" step="1" value="1" inputmode="numeric" aria-describedby="pagination-summary" required>
+          <button type="submit" class="button secondary" aria-controls="collection-grid">Go</button>
+        </form>
+      </div>
       <p id="gallery-feedback" class="feedback" role="status" aria-live="polite"></p>
-      <p class="preview-note">Demo collection · Up to 30 artworks · Reloading this page clears your images.</p>
+      <p class="preview-note">Demo collection · 24 artworks per page · Limited by browser memory · Reloading this page clears your images.</p>
     </section>
 
     <section class="editor-section" aria-labelledby="editor-title">
