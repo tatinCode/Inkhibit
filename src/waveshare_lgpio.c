@@ -27,8 +27,8 @@ static int first_error = 0;
 static char first_error_message[256];
 
 /* PWR starts LOW until all resources have been acquired. */
-static const int output_pins[] = {17, 25, 8, 18};
-static const int initial_levels[] = {0, 0, 1, 0};
+static const int output_pins[] = {17, 25, 18};
+static const int initial_levels[] = {0, 0, 0};
 
 static unsigned int claimed_outputs = 0;
 static int busy_claimed = 0;
@@ -118,7 +118,7 @@ void DEV_Module_Exit(void)
 
     if (gpio_handle >= 0) {
         /* Lower PWR before changing the other output levels. */
-        if ((claimed_outputs & (1u << 3)) != 0) {
+        if ((claimed_outputs & (1u << 2)) != 0) {
             check_lgpio(
                 lgGpioWrite(gpio_handle, EPD_PWR_PIN, 0),
                 "Lowering display PWR"
@@ -131,7 +131,7 @@ void DEV_Module_Exit(void)
             }
 
             /* Leave CS inactive; lower reset, DC and power. */
-            const int level = output_pins[i] == EPD_CS_PIN ? 1 : 0;
+            const int level = 0;
 
             check_lgpio(
                 lgGpioWrite(gpio_handle, output_pins[i], level),
@@ -236,6 +236,11 @@ fail:
 void DEV_Digital_Write(UWORD pin, UBYTE value)
 {
     if (require_ready() != 0) {
+        return;
+    }
+
+    /* lgSpiWrite() handles CE0 through the kernel SPI driver. */
+    if(pin == EDP_CS_PIN){
         return;
     }
 
