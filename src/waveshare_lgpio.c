@@ -146,7 +146,7 @@ void DEV_Module_Exit(void)
 
         if (busy_claimed) {
             check_lgpio(
-                lgGpioFree(gpio_handle, EDP_BUSY_PIN),
+                lgGpioFree(gpio_handle, EPD_BUSY_PIN),
                 "Releasing BUSY GPIO"
             );
         }
@@ -240,7 +240,7 @@ void DEV_Digital_Write(UWORD pin, UBYTE value)
     }
 
     /* lgSpiWrite() handles CE0 through the kernel SPI driver. */
-    if(pin == EDP_CS_PIN){
+    if(pin == EPD_CS_PIN){
         return;
     }
 
