@@ -12,6 +12,26 @@ set(WAVESHARE_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/waveshare/lib"
 )
 
+add_library(inkhibit_framebuffer STATIC
+    src/framebuffer.cpp
+)
+
+target_compile_features(inkhibit_framebuffer PUBLIC cxx_std_17)
+
+set_target_properties(inkhibit_framebuffer PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+target_include_directories(inkhibit_framebuffer PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_framebuffer PRIVATE
+        -Wall -Wextra -Wpedantic
+    )
+endif()
+
 if(INKHIBIT_BUILD_HARDWARE)
     find_path(LGPIO_INCLUDE_DIR NAMES lgpio.h REQUIRED)
     find_library(LGPIO_LIBRARY NAMES lgpio REQUIRED)

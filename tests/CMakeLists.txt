@@ -193,3 +193,24 @@ foreach(case IN LISTS guard_cases)
     add_test(NAME "guard.${case}" COMMAND inkhibit_display_tests "guard.${case}")
     set_tests_properties("guard.${case}" PROPERTIES TIMEOUT 20)
 endforeach()
+
+# Pure framebuffer tests: no driver, fake hardware, or Linux state files.
+add_executable(inkhibit_framebuffer_tests framebuffer_tests.cpp)
+target_link_libraries(inkhibit_framebuffer_tests PRIVATE inkhibit_framebuffer)
+target_compile_features(inkhibit_framebuffer_tests PRIVATE cxx_std_17)
+set_target_properties(inkhibit_framebuffer_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_framebuffer_tests PRIVATE
+        -Wall -Wextra -Wpedantic
+    )
+endif()
+
+set(framebuffer_cases
+    default_fill color_fills invalid_fill_colors corners orientation_marker
+    neighbor_preservation color_pairs full_canvas invalid_coordinates
+    invalid_buffer_sizes invalid_pixel_colors
+)
+foreach(case IN LISTS framebuffer_cases)
+    add_test(NAME "framebuffer.${case}" COMMAND inkhibit_framebuffer_tests "${case}")
+    set_tests_properties("framebuffer.${case}" PROPERTIES TIMEOUT 20)
+endforeach()
