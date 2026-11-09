@@ -47,7 +47,7 @@ target_compile_definitions(inkhibit_driver_under_test PRIVATE
 )
 
 set(driver_cases
-    lifecycle before_init faulted_reinit
+    lifecycle before_init kernel_cs cs_before_init faulted_reinit
     gpio_read_error gpio_write_error
     spi_error spi_short spi_null spi_oversized
     busy_immediate busy_ready busy_timeout busy_zero_timeout busy_read_error
@@ -61,7 +61,7 @@ foreach(case IN LISTS driver_cases)
     set_tests_properties("driver.${case}" PROPERTIES TIMEOUT 10)
 endforeach()
 
-foreach(stage RANGE 1 8)
+foreach(stage RANGE 1 7)
     add_test(
         NAME "driver.init_failure_${stage}"
         COMMAND inkhibit_driver_tests init_failure "${stage}"
@@ -177,7 +177,7 @@ foreach(case IN LISTS display_cases)
     add_test(NAME "display.${case}" COMMAND inkhibit_display_tests "display.${case}")
     set_tests_properties("display.${case}" PROPERTIES TIMEOUT 20)
 endforeach()
-foreach(stage RANGE 1 8)
+foreach(stage RANGE 1 7)
     add_test(NAME "display.init_failure_${stage}"
         COMMAND inkhibit_display_tests display.init_failure "${stage}")
     set_tests_properties("display.init_failure_${stage}" PROPERTIES TIMEOUT 20)

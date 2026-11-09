@@ -8,10 +8,14 @@
 enum {
     CHIP_HANDLE = 0,
     SPI_HANDLE = 1,
+    GPIO_BUSY = -79,
     INJECTED_ERROR = -99
 };
 
-struct fake_hardware fake;
+/* Kernel-owned CE0 is inactive HIGH, including before lgSpiOpen(). */
+struct fake_hardware fake = {
+    .levels = {[8] = 1}
+};
 
 static int acquisition_fails(void)
 {
@@ -73,9 +77,15 @@ int lgGpioClaimOutput(int handle, int flags, int gpio, int level)
 {
     check_gpio(handle, gpio);
     CHECK(flags == 0);
+
+    /* Match the Pi: spi0 CS0 already owns this line. */
+    if (gpio == 8) {
+        return GPIO_BUSY;
+    }
+
     CHECK(fake.claimed[gpio] == 0);
-    CHECK(gpio == 17 || gpio == 25 || gpio == 8 || gpio == 18);
-    CHECK(level == (gpio == 8 ? 1 : 0));
+    CHECK(gpio == 17 || gpio == 25 || gpio == 18);
+    CHECK(level == 0);
 
     if (acquisition_fails()) {
         return INJECTED_ERROR;
@@ -89,6 +99,7 @@ int lgGpioClaimOutput(int handle, int flags, int gpio, int level)
 int lgGpioFree(int handle, int gpio)
 {
     check_gpio(handle, gpio);
+    CHECK(gpio != 8);
     CHECK(fake.claimed[gpio] != 0);
     ++fake.frees;
 
@@ -125,6 +136,7 @@ int lgGpioRead(int handle, int gpio)
 int lgGpioWrite(int handle, int gpio, int level)
 {
     check_gpio(handle, gpio);
+    CHECK(gpio != 8);
     CHECK(fake.claimed[gpio] == 2);
     CHECK(level == 0 || level == 1);
     ++fake.writes;
@@ -155,7 +167,8 @@ int lgSpiOpen(int device, int channel, int baud, int flags)
     CHECK(fake.claimed[24] == 1);
     CHECK(fake.claimed[17] == 2);
     CHECK(fake.claimed[25] == 2);
-    CHECK(fake.claimed[8] == 2);
+    CHECK(fake.claimed[8] == 0);
+    CHECK(fake.levels[8] == 1);
     CHECK(fake.claimed[18] == 2);
     CHECK(fake.levels[18] == 0);
     ++fake.spi_opens;
@@ -172,6 +185,7 @@ int lgSpiClose(int handle)
 {
     CHECK(handle == SPI_HANDLE);
     CHECK(fake.spi_open);
+    CHECK(fake.levels[8] == 1);
     ++fake.spi_closes;
     fake.spi_open = 0;
     return 0;
@@ -183,31 +197,32 @@ int lgSpiWrite(int handle, const char *data, int count)
     CHECK(fake.spi_open);
     CHECK(data != NULL);
     CHECK(count > 0);
+    CHECK(fake.claimed[8] == 0);
+    CHECK(fake.levels[8] == 1);
     ++fake.spi_calls;
 
-    if (fake.fail_spi_at != 0 && fake.spi_calls == fake.fail_spi_at) {
-        return INJECTED_ERROR;
+    /* spidev mode 0 controls CE0 around each transfer, even on failure. */
+    fake.levels[8] = 0;
+    int result = count;
+    if ((fake.fail_spi_at != 0 && fake.spi_calls == fake.fail_spi_at)
+        || (fake.fail_spi_command_enabled && fake.levels[25] == 0
+            && count == 1 && (uint8_t)data[0] == fake.fail_spi_command)) {
+        result = INJECTED_ERROR;
+    } else if (fake.short_spi_write) {
+        result = count - 1;
+    } else {
+        CHECK((size_t)count <= TRACE_CAPACITY - fake.trace_size);
+        for (int i = 0; i < count; ++i) {
+            fake.trace[fake.trace_size++] = (struct spi_byte) {
+                .value = (uint8_t)data[i],
+                .dc = (uint8_t)fake.levels[25],
+                .cs = (uint8_t)fake.levels[8]
+            };
+        }
     }
 
-    if (fake.fail_spi_command_enabled && fake.levels[25] == 0
-        && count == 1 && (uint8_t)data[0] == fake.fail_spi_command) {
-        return INJECTED_ERROR;
-    }
-
-    if (fake.short_spi_write) {
-        return count - 1;
-    }
-
-    CHECK((size_t)count <= TRACE_CAPACITY - fake.trace_size);
-    for (int i = 0; i < count; ++i) {
-        fake.trace[fake.trace_size++] = (struct spi_byte) {
-            .value = (uint8_t)data[i],
-            .dc = (uint8_t)fake.levels[25],
-            .cs = (uint8_t)fake.levels[8]
-        };
-    }
-
-    return count;
+    fake.levels[8] = 1;
+    return result;
 }
 
 const char *lguErrorText(int error)

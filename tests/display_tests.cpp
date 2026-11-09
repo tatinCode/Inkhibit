@@ -304,7 +304,9 @@ void test_success()
         REQUIRE(inkhibit_driver_error() == 0);
         REQUIRE(fake.chip_opens == 1 && fake.spi_opens == 1);
         REQUIRE(fake.chip_closes == 1 && fake.spi_closes == 1);
-        REQUIRE(fake.frees == 5);
+        REQUIRE(fake.frees == 4);
+        REQUIRE(fake.claimed[8] == 0);
+        REQUIRE(fake.levels[8] == 1);
         REQUIRE(fake.levels[18] == 0);
         require_closed();
         require_state(directory.path, "idle", now_ms() + DisplayGuard::cooldown_ms);
@@ -346,7 +348,7 @@ void test_success()
 
 void test_init_failure(unsigned stage)
 {
-    REQUIRE(stage >= 1 && stage <= 8);
+    REQUIRE(stage >= 1 && stage <= 7);
     TemporaryDirectory directory;
     fake.fail_acquisition_at = stage;
     {
@@ -381,7 +383,9 @@ void test_hardware_failure(const std::string& operation, int error)
         expect_throw([&] { display.show(valid_frame()); }, operation);
         REQUIRE(inkhibit_driver_error() == error);
         REQUIRE(fake.chip_closes == 1 && fake.spi_closes == 1);
-        REQUIRE(fake.frees == 5);
+        REQUIRE(fake.frees == 4);
+        REQUIRE(fake.claimed[8] == 0);
+        REQUIRE(fake.levels[8] == 1);
         require_closed();
         require_state(directory.path, "active", 0);
         display.close(); // Already-cleaned failure must not release resources twice.

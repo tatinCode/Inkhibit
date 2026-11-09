@@ -30,7 +30,8 @@ struct spi_byte {
 struct fake_hardware {
     int chip_open;
     int spi_open;
-    /* 0 = unclaimed, 1 = input, 2 = output. */
+    /* Adapter-owned claims: 0 = none, 1 = input, 2 = output.
+     * GPIO8 belongs to the kernel SPI driver, not this claim table. */
     int claimed[32];
     int levels[32];
 
@@ -45,7 +46,7 @@ struct fake_hardware {
     unsigned sleep_calls;
     unsigned clock_calls;
 
-    /* Chip open, BUSY claim, four outputs, SPI open, power enable. */
+    /* Chip open, BUSY claim, three outputs, SPI open, power enable. */
     unsigned acquisition_step;
     unsigned fail_acquisition_at;
     int read_error;
