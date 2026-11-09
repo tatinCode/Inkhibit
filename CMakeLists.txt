@@ -32,6 +32,26 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     )
 endif()
 
+add_library(inkhibit_image STATIC
+    src/image.cpp
+)
+
+target_compile_features(inkhibit_image PUBLIC cxx_std_17)
+
+set_target_properties(inkhibit_image PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+target_include_directories(inkhibit_image PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_image PRIVATE
+        -Wall -Wextra -Wpedantic
+    )
+endif()
+
 if(INKHIBIT_BUILD_HARDWARE)
     find_path(LGPIO_INCLUDE_DIR NAMES lgpio.h REQUIRED)
     find_library(LGPIO_LIBRARY NAMES lgpio REQUIRED)
@@ -121,6 +141,27 @@ if(INKHIBIT_BUILD_HARDWARE)
         )
 
         target_compile_options(inkhibit-display-test PRIVATE
+            -Wall -Wextra -Wpedantic
+        )
+    endif()
+
+    add_executable(inkhibit-display
+        src/display_image.cpp
+    )
+
+    target_compile_features(inkhibit-display PRIVATE cxx_std_17)
+
+    set_target_properties(inkhibit-display PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+
+    target_link_libraries(inkhibit-display PRIVATE
+        inkhibit_display
+        inkhibit_image
+    )
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(inkhibit-display PRIVATE
             -Wall -Wextra -Wpedantic
         )
     endif()
