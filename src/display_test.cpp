@@ -1,5 +1,3 @@
-native_x = 399 - landscape_y
-native_y = landscape_x
 #include "inkhibit/display.hpp"
 
 #include <array>
