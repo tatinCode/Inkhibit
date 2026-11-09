@@ -92,3 +92,104 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         -Wall -Wextra -Werror=implicit-function-declaration
     )
 endif()
+
+# Compile the unmodified C++ sources with the normal system declarations.
+set(display_check_sources
+    "${PROJECT_SOURCE_DIR}/src/display.cpp"
+    "${PROJECT_SOURCE_DIR}/src/display_guard.cpp"
+)
+if(EXISTS "${PROJECT_SOURCE_DIR}/src/display_test.cpp")
+    list(APPEND display_check_sources "${PROJECT_SOURCE_DIR}/src/display_test.cpp")
+else()
+    message(STATUS "src/display_test.cpp is absent; checking wrapper/guard only")
+endif()
+add_library(inkhibit_display_compile_check OBJECT ${display_check_sources})
+
+target_compile_features(
+    inkhibit_display_compile_check PRIVATE cxx_std_17
+)
+
+set_target_properties(inkhibit_display_compile_check PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+target_compile_definitions(inkhibit_display_compile_check PRIVATE
+    _POSIX_C_SOURCE=200809L
+)
+
+target_include_directories(inkhibit_display_compile_check PRIVATE
+    "${PROJECT_SOURCE_DIR}/include"
+    "${WAVESHARE_DIR}/Config"
+    "${WAVESHARE_DIR}/e-Paper"
+)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_display_compile_check PRIVATE
+        -Wall -Wextra -Wpedantic
+    )
+endif()
+
+# Only this test copy of the guard gets a simulated boot clock. Target-local
+# definitions keep the production library and compile check unaffected.
+add_library(inkhibit_guard_under_test OBJECT
+    "${PROJECT_SOURCE_DIR}/src/display_guard.cpp"
+)
+target_compile_definitions(inkhibit_guard_under_test PRIVATE
+    clock_gettime=inkhibit_guard_test_clock_gettime
+)
+
+add_executable(inkhibit_display_tests
+    display_tests.cpp
+    fakes/fake_hardware.c
+    "${PROJECT_SOURCE_DIR}/src/display.cpp"
+)
+target_link_libraries(inkhibit_display_tests PRIVATE
+    inkhibit_guard_under_test
+    inkhibit_driver_under_test
+)
+
+foreach(target IN ITEMS inkhibit_guard_under_test inkhibit_display_tests)
+    target_compile_features(${target} PRIVATE cxx_std_17)
+    set_target_properties(${target} PROPERTIES
+        C_EXTENSIONS OFF
+        CXX_EXTENSIONS OFF
+    )
+    target_compile_definitions(${target} PRIVATE _POSIX_C_SOURCE=200809L)
+    target_include_directories(${target} PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/fakes"
+        "${PROJECT_SOURCE_DIR}/include"
+        "${WAVESHARE_DIR}/Config"
+        "${WAVESHARE_DIR}/e-Paper"
+    )
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endforeach()
+target_compile_features(inkhibit_display_tests PRIVATE c_std_11)
+
+set(display_cases
+    lazy_init empty_frame short_frame long_frame invalid_colors validation_retry
+    success one_shot_after_failure panel_init_timeout transmission_error
+    refresh_timeout sleep_error cleanup_error state_write_error
+    cooldown_before_hardware lock_before_hardware
+)
+foreach(case IN LISTS display_cases)
+    add_test(NAME "display.${case}" COMMAND inkhibit_display_tests "display.${case}")
+    set_tests_properties("display.${case}" PROPERTIES TIMEOUT 20)
+endforeach()
+foreach(stage RANGE 1 8)
+    add_test(NAME "display.init_failure_${stage}"
+        COMMAND inkhibit_display_tests display.init_failure "${stage}")
+    set_tests_properties("display.init_failure_${stage}" PROPERTIES TIMEOUT 20)
+endforeach()
+
+set(guard_cases
+    initial_uptime lifecycle begin_twice complete_idempotent rechecks_state
+    lock_process cooldown_process interrupted_process invalid_state
+    negative_timestamp boot_change clock_failure nonregular_state
+    symlinks oversized_state
+)
+foreach(case IN LISTS guard_cases)
+    add_test(NAME "guard.${case}" COMMAND inkhibit_display_tests "guard.${case}")
+    set_tests_properties("guard.${case}" PROPERTIES TIMEOUT 20)
+endforeach()

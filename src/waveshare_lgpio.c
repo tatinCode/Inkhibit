@@ -1,6 +1,5 @@
 #include "DEV_Config.h"
 #include "inkhibit/driver_status.h"
-#include "pi_config.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -11,6 +10,14 @@
 #include <time.h>
 
 #include <lgpio.h>
+
+int EPD_RST_PIN = 17;
+int EPD_DC_PIN = 25;
+int EPD_CS_PIN = 8;
+int EPD_BUSY_PIN = 24;
+int EPD_PWR_PIN = 18;
+int EPD_MOSI_PIN = 10;
+int EPD_SCLK_PIN = 11;
 
 static int gpio_handle = -1;
 static int spi_handle = -1;

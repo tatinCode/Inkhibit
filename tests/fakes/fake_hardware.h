@@ -51,6 +51,8 @@ struct fake_hardware {
     int read_error;
     int write_error;
     unsigned fail_spi_at;
+    int fail_spi_command_enabled;
+    uint8_t fail_spi_command;
     int short_spi_write;
     int fail_free_pin;
 
@@ -65,6 +67,10 @@ struct fake_hardware {
     size_t trace_size;
 };
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern struct fake_hardware fake;
 
 int inkhibit_test_clock_gettime(clockid_t clock_id, struct timespec *now);
@@ -72,5 +78,9 @@ int inkhibit_test_nanosleep(
     const struct timespec *request,
     struct timespec *remaining
 );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

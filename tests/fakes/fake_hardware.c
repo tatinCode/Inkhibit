@@ -189,6 +189,11 @@ int lgSpiWrite(int handle, const char *data, int count)
         return INJECTED_ERROR;
     }
 
+    if (fake.fail_spi_command_enabled && fake.levels[25] == 0
+        && count == 1 && (uint8_t)data[0] == fake.fail_spi_command) {
+        return INJECTED_ERROR;
+    }
+
     if (fake.short_spi_write) {
         return count - 1;
     }
