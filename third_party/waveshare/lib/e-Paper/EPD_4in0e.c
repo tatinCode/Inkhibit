@@ -109,7 +109,7 @@ static void EPD_4IN0E_ReadBusyH(void)
      */
     (void)inkhibit_driver_wait_ready(60 * 1000);
 #else
-    Debugug("e-Paper busy H\r\n");
+    Debug("e-Paper busy H\r\n");
 
     while(!DEV_Digital_Read(EPD_BUSY_PIN)) {      //LOW: busy, HIGH: idle
         DEV_Delay_ms(10);

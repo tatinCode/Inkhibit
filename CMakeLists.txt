@@ -8,13 +8,13 @@ option(
     OFF
 )
 
+set(WAVESHARE_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/waveshare/lib"
+)
+
 if(INKHIBIT_BUILD_HARDWARE)
     find_path(LGPIO_INCLUDE_DIR NAMES lgpio.h REQUIRED)
     find_library(LGPIO_LIBRARY NAMES lgpio REQUIRED)
-
-    set(WAVESHARE_DIR
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/waveshare/lib"
-    )
 
     add_library(inkhibit_driver STATIC
         src/waveshare_lgpio.c
@@ -54,4 +54,10 @@ if(INKHIBIT_BUILD_HARDWARE)
             -Wpedantic
         )
     endif()
+endif()
+
+include(CTest)
+
+if(BUILD_TESTING)
+    add_subdirectory(tests)
 endif()
