@@ -2,6 +2,7 @@
 #define INKHIBIT_DISPLAY_HPP
 
 #include "inkhibit/display_guard.hpp"
+#include "inkhibit/framebuffer.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -12,10 +13,14 @@ namespace inkhibit {
 
 class Display {
 public:
-    static constexpr std::size_t native_width = 400;
-    static constexpr std::size_t native_height = 600;
+    static constexpr std::size_t native_width = 
+        framebuffer::native_width;
+
+    static constexpr std::size_t native_height = 
+        framebuffer::native_height;
+
     static constexpr std::size_t framebuffer_size =
-        native_width * native_height / 2;
+        framebuffer::framebuffer_size;
 
     explicit Display(
         const std::filesystem::path& state_directory = "/var/lib/inkhibit"
