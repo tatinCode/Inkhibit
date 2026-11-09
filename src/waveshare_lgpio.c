@@ -146,7 +146,7 @@ void DEV_Module_Exit(void)
 
         if (busy_claimed) {
             check_lgpio(
-                lgGpioFree(gpio_handle, EPD_BUSY_PIN),
+                lgGpioFree(gpio_handle, EDP_BUSY_PIN),
                 "Releasing BUSY GPIO"
             );
         }
