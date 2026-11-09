@@ -1,8 +1,10 @@
 # Inkhibit — Project Plan
 
-This document preserves the project requirements and records the initial
-Milestone 1 review separately. It does not claim that hardware validation has
-been completed.
+This document records current progress and project requirements, followed by
+the historical Milestone 1 review. Current validation includes automated tests
+and maintainer-reported results on the Raspberry Pi. The historical review
+describes an earlier repository state; its open issues and validation status
+are superseded by the current progress below.
 
 ## Project overview
 
@@ -33,9 +35,9 @@ Official manual:
 Official model-specific demo archive:
 <https://files.waveshare.com/wiki/4inch-e-Paper-HAT%2B-(E)/4inch_e-Paper_E.zip>
 
-## Planned technology stack
+## Technology stack
 
-- C++17 or C++20; final choice remains open.
+- C++17 for the display wrapper and C11 for the checked adapter and driver tests.
 - CMake.
 - Waveshare's existing C display driver.
 - A lightweight native image-processing library; selection remains open.
@@ -53,7 +55,92 @@ Create a standalone C++ program that displays ordinary JPG and PNG images on the
 Waveshare screen.
 
 Do not implement the HTTP server, Wi-Fi provisioning, or gallery interface in
-this phase. Begin with Milestone 1 and progress incrementally.
+this phase. Progress incrementally through the milestones below. The separate
+browser-only prototype in `web/` is UI groundwork; backend integration belongs
+to a later phase.
+
+## Current progress
+
+| Milestone | Status |
+| --- | --- |
+| 1. Hardware and driver validation | Complete for the single-refresh test-pattern foundation; Pi smoke test reported successful by the maintainer. |
+| 2. C++ display interface | Complete; wrapper, lifecycle/error handling, process lock, and persistent cooldown implemented and tested. |
+| 3. Automatic image processing | Next; extract framebuffer helpers before adding image loading and conversion. |
+| 4. Command-line image application | Pending the image pipeline. |
+
+Phase 1 remains in progress: `inkhibit-display-test` displays a generated
+pattern, while the `inkhibit-display painting.jpg` image command in the
+definition of done is still to be implemented.
+
+### Validation checkpoint
+
+- The maintainer built the hardware targets on the Pi and confirmed the
+  six-color bars and upper-left L marker on the actual panel, then reported the
+  setup working after the chip-select correction.
+- All **76 CTest cases pass** on the development machine, with the updated suite
+  also reported passing on the Pi. Automated tests use fake hardware and
+  simulated clocks; physical validation is a separate manual operation.
+- The checked C adapter, model-specific panel driver, and C++ wrapper are tested
+  together. The unchecked vendor branch and normal C++ sources have additional
+  compile-only checks.
+- Successful wrapper shutdown sends deep sleep, releases resources, and records
+  the next permitted refresh time. The smoke-test completion message and
+  immediate cooldown-rejection check are documented in the
+  [README](../README.md#run-the-physical-smoke-test).
+
+### Implemented display decisions
+
+- `src/waveshare_lgpio.c` supplies the vendor-compatible GPIO symbols directly;
+  the former `src/pi_config.h` has been removed.
+- The adapter manually owns only RST (GPIO 17), DC (25), PWR (18), and BUSY (24).
+  Kernel-managed CE0 on GPIO 8 selects the panel during SPI transfers through
+  `/dev/spidev0.0`, at 10 MHz in mode 0. Vendor manual CS writes are no-ops in
+  this adapter after the readiness check.
+- Physical diagnostics showed GPIO 8 owned by `spi0 CS0`. The original manual
+  claim conflicted with that kernel owner and produced lgpio error `-79`.
+  Fake hardware now models this ownership and rejects manual CS access.
+- Resource tests cover seven initialization stages and four GPIO frees. The
+  suite includes regression cases for kernel-managed CS and CS calls before
+  initialization.
+- The checked driver preserves the first error through cleanup and applies a
+  60-second engineering timeout to BUSY waits. Its deep-sleep path includes the
+  two-second delay before resource release.
+- `Display` and `DisplayGuard` are non-copyable and non-movable. `Display`
+  initializes hardware lazily in `show()`, validates the full 120,000-byte
+  framebuffer and every color nibble before hardware access, and permits one
+  hardware-update attempt per object.
+- `DisplayGuard` serializes sessions with `flock` and persists active/idle state
+  and cooldown deadlines in `/var/lib/inkhibit/`. A successful shutdown starts
+  a 180-second cooldown. An unfinished session, invalid state record, or changed
+  boot ID records a fresh 180-second recovery cooldown on the next invocation.
+  Repeated attempts do not extend that recovery deadline. With no state file,
+  the first update requires at least 180 seconds of system uptime.
+- State deadlines use `CLOCK_BOOTTIME` and the Linux boot ID. Strict
+  `std::from_chars` parsing rejects negative, overflowing, and partially numeric
+  timestamps. Oversized or nonregular state files are rejected before hardware
+  access.
+- The working landscape mapping is `native_x = 399 - landscape_y` and
+  `native_y = landscape_x`, packed in native row-major order with the first
+  pixel in the high nibble.
+
+### Next implementation increment
+
+1. Extract landscape-to-native coordinate mapping and pixel packing from
+   `src/display_test.cpp` into a reusable, hardware-independent module.
+2. Test all corners, an asymmetric orientation marker, high/low nibble order,
+   all six color codes, and the exact framebuffer size on the PC.
+3. Select a lightweight JPG/PNG decoder and resizing approach, with explicit
+   dimension and decoded-memory limits for the 512 MB Pi.
+4. Add decoding, aspect-ratio-preserving resizing/cropping, and nearest-color
+   quantization, followed by Floyd–Steinberg dithering and preview output.
+5. Connect the image pipeline to `Display` through the image CLI in Milestone 4.
+
+Proposed image defaults to confirm during Milestone 3: center-crop to fill a
+600 × 400 landscape canvas, composite transparent PNG pixels onto white, and
+normalize JPEG EXIF orientation before resizing. These are planned processing
+policies, not implemented features.
+
+## Phase 1 milestones
 
 ### Milestone 1: Hardware and driver validation
 
@@ -166,7 +253,10 @@ the panel to sleep afterward.
 ## Initial Milestone 1 review — 2026-10-29
 
 These findings describe the repository on branch `e-paper-driver` at commit
-`94338de`. They are review observations, not completed hardware tests.
+`94338de`. They are historical review observations, not the current validation
+checkpoint. The linkage issue, unchecked-build typo, single-refresh executable,
+and display wrapper described as follow-up work here have since been addressed;
+see [Current progress](#current-progress).
 
 ### Source-verified display details
 
@@ -253,7 +343,9 @@ DEV_Module_Exit()
 ### Official demo build reference
 
 Run these steps on the Raspberry Pi, not on the Arch development computer.
-They are instructions only; they have not been executed against the hardware.
+This is the original vendor-demo reference from the initial review. Use the
+[README](../README.md#build-and-test-on-the-raspberry-pi) for the validated
+Inkhibit build and single-refresh smoke-test workflow.
 
 Enable SPI with `sudo raspi-config`, reboot, and verify `/dev/spidev0.0` exists.
 On current Raspberry Pi OS, configuration is normally under
@@ -284,14 +376,16 @@ physical refreshes, with appropriate sleep and cleanup.
   calculation when starting the relevant milestones.
 - Keep hardware-disabled builds usable for image-processing tests on Arch Linux.
 
-### Validation status and next step
+### Validation status and next step at the initial review
 
-- Checked panel source passes a host syntax-only compilation with the Inkhibit
+- Checked panel source passed a host syntax-only compilation with the Inkhibit
   checking path enabled.
-- Full hardware build was not validated in this environment; `lgpio.h` is absent.
-- No physical hardware tests have run.
-- Milestone 1 remains incomplete.
+- A full hardware build had not been validated in the review environment;
+  `lgpio.h` was absent there.
+- No physical hardware test results were recorded in that review.
+- Milestone 1 was incomplete at that point.
 
-Next: fix GPIO linkage and the unchecked-build typo, add a single-refresh
-validation executable, then verify colors, orientation, BUSY completion, sleep,
-and shutdown on the Raspberry Pi before moving to Milestone 2.
+The next steps then were to fix GPIO linkage and the unchecked-build typo, add a
+single-refresh validation executable, and validate the lifecycle on the Pi.
+Those steps are now superseded by the image-processing increment in
+[Current progress](#current-progress).

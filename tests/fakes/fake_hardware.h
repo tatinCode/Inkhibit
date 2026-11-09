@@ -30,7 +30,8 @@ struct spi_byte {
 struct fake_hardware {
     int chip_open;
     int spi_open;
-    /* 0 = unclaimed, 1 = input, 2 = output. */
+    /* Adapter-owned claims: 0 = none, 1 = input, 2 = output.
+     * GPIO8 belongs to the kernel SPI driver, not this claim table. */
     int claimed[32];
     int levels[32];
 
@@ -45,12 +46,14 @@ struct fake_hardware {
     unsigned sleep_calls;
     unsigned clock_calls;
 
-    /* Chip open, BUSY claim, four outputs, SPI open, power enable. */
+    /* Chip open, BUSY claim, three outputs, SPI open, power enable. */
     unsigned acquisition_step;
     unsigned fail_acquisition_at;
     int read_error;
     int write_error;
     unsigned fail_spi_at;
+    int fail_spi_command_enabled;
+    uint8_t fail_spi_command;
     int short_spi_write;
     int fail_free_pin;
 
@@ -65,6 +68,10 @@ struct fake_hardware {
     size_t trace_size;
 };
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern struct fake_hardware fake;
 
 int inkhibit_test_clock_gettime(clockid_t clock_id, struct timespec *now);
@@ -72,5 +79,9 @@ int inkhibit_test_nanosleep(
     const struct timespec *request,
     struct timespec *remaining
 );
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

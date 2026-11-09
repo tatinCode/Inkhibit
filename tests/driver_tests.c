@@ -15,12 +15,15 @@ static void start_module(void)
     CHECK(fake.chip_open);
     CHECK(fake.spi_open);
     CHECK(fake.levels[18] == 1);
+    CHECK(fake.claimed[8] == 0);
+    CHECK(fake.levels[8] == 1);
 }
 
 static void check_closed(void)
 {
     CHECK(!fake.chip_open);
     CHECK(!fake.spi_open);
+    CHECK(fake.levels[8] == 1);
     for (size_t i = 0; i < 32; ++i) {
         CHECK(fake.claimed[i] == 0);
     }
@@ -60,7 +63,7 @@ static void test_lifecycle(void)
     DEV_Module_Exit();
     check_closed();
     CHECK(fake.levels[18] == 0);
-    CHECK(fake.frees == 5);
+    CHECK(fake.frees == 4);
 
     const unsigned frees = fake.frees;
     const unsigned closes = fake.chip_closes;
@@ -75,7 +78,7 @@ static void test_lifecycle(void)
 
 static void test_init_failure(unsigned stage)
 {
-    CHECK(stage >= 1 && stage <= 8);
+    CHECK(stage >= 1 && stage <= 7);
     fake.fail_acquisition_at = stage;
     CHECK(DEV_Module_Init() != 0);
     CHECK(inkhibit_driver_error() == EIO);
@@ -93,6 +96,56 @@ static void test_before_init(void)
     CHECK(inkhibit_driver_error() == ENODEV);
     CHECK(fake.reads == 0);
     CHECK(fake.chip_opens == 0);
+    start_module();
+}
+
+static void test_kernel_cs(void)
+{
+    /* Initialization must succeed while CE0 is already owned by SPI. */
+    start_module();
+    const unsigned writes = fake.writes;
+
+    DEV_Digital_Write(EPD_CS_PIN, 0);
+    CHECK(fake.writes == writes);
+    CHECK(fake.levels[8] == 1);
+    DEV_SPI_WriteByte(0xA5);
+    CHECK(fake.levels[8] == 1);
+    DEV_Digital_Write(EPD_CS_PIN, 1);
+
+    uint8_t bytes[] = {0x12, 0x35, 0x60};
+    DEV_Digital_Write(EPD_CS_PIN, 0);
+    DEV_SPI_Write_nByte(bytes, sizeof(bytes));
+    DEV_Digital_Write(EPD_CS_PIN, 1);
+
+    CHECK(inkhibit_driver_error() == 0);
+    CHECK(fake.writes == writes);
+    CHECK(fake.claimed[8] == 0);
+    CHECK(fake.levels[8] == 1);
+    CHECK(fake.spi_calls == 2);
+    CHECK(fake.trace_size == 1 + sizeof(bytes));
+    CHECK(fake.trace[0].value == 0xA5);
+    for (size_t i = 0; i < sizeof(bytes); ++i) {
+        CHECK(fake.trace[1 + i].value == bytes[i]);
+    }
+    for (size_t i = 0; i < fake.trace_size; ++i) {
+        CHECK(fake.trace[i].cs == 0);
+    }
+
+    DEV_Module_Exit();
+    CHECK(inkhibit_driver_error() == 0);
+    CHECK(fake.frees == 4);
+    check_closed();
+}
+
+static void test_cs_before_init(void)
+{
+    /* Ignoring vendor CS writes must not bypass the readiness check. */
+    DEV_Digital_Write(EPD_CS_PIN, 0);
+    CHECK(inkhibit_driver_error() == ENODEV);
+    CHECK(fake.chip_opens == 0);
+    CHECK(fake.writes == 0);
+    CHECK(fake.spi_calls == 0);
+    CHECK(fake.levels[8] == 1);
     start_module();
 }
 
@@ -288,7 +341,7 @@ static void test_cleanup_error(void)
     fake.fail_free_pin = 17;
     DEV_Module_Exit();
     CHECK(inkhibit_driver_error() == EIO);
-    CHECK(fake.frees == 5);
+    CHECK(fake.frees == 4);
     CHECK(fake.spi_closes == 1);
     CHECK(fake.chip_closes == 1);
     check_closed();
@@ -433,6 +486,8 @@ int main(int argc, char **argv)
     static const struct test_case tests[] = {
         {"lifecycle", test_lifecycle},
         {"before_init", test_before_init},
+        {"kernel_cs", test_kernel_cs},
+        {"cs_before_init", test_cs_before_init},
         {"faulted_reinit", test_faulted_reinit},
         {"gpio_read_error", test_gpio_read_error},
         {"gpio_write_error", test_gpio_write_error},

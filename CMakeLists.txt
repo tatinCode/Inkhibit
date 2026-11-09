@@ -54,6 +54,55 @@ if(INKHIBIT_BUILD_HARDWARE)
             -Wpedantic
         )
     endif()
+
+    add_library(inkhibit_display STATIC
+        src/display.cpp
+        src/display_guard.cpp
+    )
+
+    target_compile_features(inkhibit_display PUBLIC cxx_std_17)
+
+    set_target_properties(inkhibit_display PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+
+    target_compile_definitions(inkhibit_display PRIVATE
+        _POSIX_C_SOURCE=200809L
+    )
+
+    target_include_directories(inkhibit_display
+        PUBLIC
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        PRIVATE
+            "${WAVESHARE_DIR}/Config"
+            "${WAVESHARE_DIR}/e-Paper"
+    )
+
+    target_link_libraries(inkhibit_display PUBLIC
+        inkhibit_driver
+    )
+
+    add_executable(inkhibit-display-test
+        src/display_test.cpp
+    )
+
+    target_link_libraries(inkhibit-display-test PRIVATE
+        inkhibit_display
+    )
+
+    set_target_properties(inkhibit-display-test PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(inkhibit_display PRIVATE
+            -Wall -Wextra -Wpedantic
+        )
+
+        target_compile_options(inkhibit-display-test PRIVATE
+            -Wall -Wextra -Wpedantic
+        )
+    endif()
 endif()
 
 include(CTest)
