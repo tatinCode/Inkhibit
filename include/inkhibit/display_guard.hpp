@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+
 namespace inkhibit {
 
 class DisplayGuard {

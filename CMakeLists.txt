@@ -100,6 +100,7 @@ if(INKHIBIT_BUILD_HARDWARE)
 
     target_link_libraries(inkhibit_display PUBLIC
         inkhibit_driver
+        inkhibit_framebuffer
     )
 
     add_executable(inkhibit-display-test

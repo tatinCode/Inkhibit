@@ -1,4 +1,5 @@
 #include "inkhibit/display.hpp"
+#include "inkhibit/framebuffer.hpp"
 
 #include <array>
 #include <csignal>
@@ -6,101 +7,77 @@
 #include <exception>
 #include <iostream>
 #include <string>
-#include <vector>
 
 namespace {
 
-constexpr int canvas_width = 600;
-constexpr int canvas_height = 400;
+namespace fb = inkhibit::framebuffer;
+
+constexpr int canvas_width = 
+    static_cast<int>(fb::landscape_width);
+constexpr int canvas_height = 
+    static_cast<int>(fb::landscape_height);
 
 volatile std::sig_atomic_t requested_signal = 0;
 
-void handle_signal(int signal)
-{
+void handle_signal(int signal) {
     // Never call driver functions or perform I/O from a signal handler.
     requested_signal = signal;
 }
 
-void set_landscape_pixel(
-    std::vector<std::uint8_t>& framebuffer,
-    int x,
-    int y,
-    std::uint8_t color)
-{
-    const std::size_t native_x =
-        static_cast<std::size_t>(canvas_height - 1 - y);
-    const std::size_t native_y =
-        static_cast<std::size_t>(x);
 
-    const std::size_t offset =
-        native_y * (inkhibit::Display::native_width / 2)
-        + native_x / 2;
-
-    auto& byte = framebuffer[offset];
-
-    if (native_x % 2 == 0) {
-        byte = static_cast<std::uint8_t>(
-            (byte & 0x0F) | (color << 4)
-        );
-    } else {
-        byte = static_cast<std::uint8_t>(
-            (byte & 0xF0) | color
-        );
-    }
-}
-
-std::vector<std::uint8_t> make_pattern()
-{
-    std::vector<std::uint8_t> framebuffer(
-        inkhibit::Display::framebuffer_size,
-        0x11
-    );
+fb::Buffer make_pattern() {
+    auto framebuffer = fb::make_framebuffer();
 
     // Left to right: black, white, yellow, red, blue, green.
-    constexpr std::array<std::uint8_t, 6> colors{
-        0x0, 0x1, 0x2, 0x3, 0x5, 0x6
+    constexpr std::array<fb::Color, 6> colors{
+        fb::Color::black,
+        fb::Color::white,
+        fb::Color::yellow,
+        fb::Color::red,
+        fb::Color::blue,
+        fb::Color::green
     };
 
     for (int y = 0; y < canvas_height; ++y) {
         for (int x = 0; x < canvas_width; ++x) {
-            std::uint8_t color =
+            auto color =
                 colors[static_cast<std::size_t>(x / 100)];
 
             // Black outer border and white inner border.
             if (x < 4 || y < 4
                 || x >= canvas_width - 4
                 || y >= canvas_height - 4) {
-                color = 0x0;
+                color = fb::Color::black;
             } else if (x < 6 || y < 6
                 || x >= canvas_width - 6
                 || y >= canvas_height - 6) {
-                color = 0x1;
+                color = fb::Color::white;
             }
 
             // White square in the upper-left corner.
             if (x >= 14 && x < 54 && y >= 14 && y < 54) {
-                color = 0x1;
+                color = fb::Color::white;
             }
 
             // An upright black L inside the square reveals rotation/mirroring.
             const bool vertical =
                 x >= 20 && x < 26 && y >= 20 && y < 46;
+
             const bool horizontal =
                 x >= 20 && x < 46 && y >= 40 && y < 46;
 
             if (vertical || horizontal) {
-                color = 0x0;
+                color = fb::Color::black;
             }
 
-            set_landscape_pixel(framebuffer, x, y, color);
+            fb::set_landscape_pixel(framebuffer, x, y, color);
         }
     }
 
     return framebuffer;
 }
 
-void print_usage()
-{
+void print_usage() {
     std::cout
         << "Usage: inkhibit-display-test\n\n"
         << "Displays one six-color test pattern, then sleeps and exits.\n"
@@ -112,8 +89,7 @@ void print_usage()
 
 } // namespace
 
-int main(int argc, char** argv)
-{
+int main(int argc, char** argv) {
     if (argc == 2 && std::string(argv[1]) == "--help") {
         print_usage();
         return 0;
