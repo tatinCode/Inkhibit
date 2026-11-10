@@ -97,6 +97,7 @@ endif()
 set(display_check_sources
     "${PROJECT_SOURCE_DIR}/src/display.cpp"
     "${PROJECT_SOURCE_DIR}/src/display_guard.cpp"
+    "${PROJECT_SOURCE_DIR}/src/display_image.cpp"
 )
 if(EXISTS "${PROJECT_SOURCE_DIR}/src/display_test.cpp")
     list(APPEND display_check_sources "${PROJECT_SOURCE_DIR}/src/display_test.cpp")
@@ -213,4 +214,29 @@ set(framebuffer_cases
 foreach(case IN LISTS framebuffer_cases)
     add_test(NAME "framebuffer.${case}" COMMAND inkhibit_framebuffer_tests "${case}")
     set_tests_properties("framebuffer.${case}" PROPERTIES TIMEOUT 20)
+endforeach()
+
+# Real JPEG/PNG decoding and image transforms, independent of display hardware.
+add_executable(inkhibit_image_tests image_tests.cpp)
+target_link_libraries(inkhibit_image_tests PRIVATE inkhibit_image inkhibit_framebuffer)
+target_compile_features(inkhibit_image_tests PRIVATE cxx_std_17)
+set_target_properties(inkhibit_image_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_image_tests PRIVATE
+        -Wall -Wextra -Wpedantic
+    )
+endif()
+
+set(image_cases
+    decode.png_rgb decode.png_alpha decode.png_gray decode.jpeg
+    decode.invalid_input decode.unsupported_format decode.side_limit
+    decode.pixel_limit decode.truncated_png decode.file_png decode.file_errors
+    decode.file_limit
+    fit.exact fit.small fit.horizontal fit.vertical fit.both fit.mixed
+    fit.fractional fit.thin_vertical fit.thin_horizontal fit.invalid
+    color.palette color.hues color.tie pipeline_orientation
+)
+foreach(case IN LISTS image_cases)
+    add_test(NAME "image.${case}" COMMAND inkhibit_image_tests "${case}")
+    set_tests_properties("image.${case}" PROPERTIES TIMEOUT 20)
 endforeach()
