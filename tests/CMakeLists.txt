@@ -240,3 +240,27 @@ foreach(case IN LISTS image_cases)
     add_test(NAME "image.${case}" COMMAND inkhibit_image_tests "${case}")
     set_tests_properties("image.${case}" PROPERTIES TIMEOUT 20)
 endforeach()
+
+# Quantization exercises real palette selection, diffusion, and native packing.
+add_executable(inkhibit_quantization_tests quantization_tests.cpp)
+target_link_libraries(inkhibit_quantization_tests PRIVATE inkhibit_image)
+target_compile_features(inkhibit_quantization_tests PRIVATE cxx_std_17)
+set_target_properties(inkhibit_quantization_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_quantization_tests PRIVATE
+        -Wall -Wextra -Wpedantic
+    )
+endif()
+
+set(quantization_cases
+    nearest_compatibility palette_fills orientation
+    diffusion_right diffusion_below_left diffusion_below diffusion_below_right
+    signed_error clipping known_patch edge_left edge_right bottom_right
+    default_method repeatability invalid_dimensions invalid_buffer_sizes
+    invalid_method
+)
+foreach(case IN LISTS quantization_cases)
+    add_test(NAME "quantization.${case}" COMMAND inkhibit_quantization_tests "${case}")
+    # Some cases convert several full canvases; allow for Debug builds on Pi.
+    set_tests_properties("quantization.${case}" PROPERTIES TIMEOUT 60)
+endforeach()

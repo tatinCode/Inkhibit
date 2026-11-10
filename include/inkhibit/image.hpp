@@ -41,6 +41,21 @@ framebuffer::Color nearest_color(
     std::uint8_t green,
     std::uint8_t blue);
 
+enum class Dither {
+    nearest,
+    floyd_steinberg
+};
+
+// Convert an already-fitted 600x400 RGB image into the native framebuffer.
+// Floyd-Steinberg scans left-to-right, top-to-bottom.
+// The input image is never modified.
+//
+// Throws std::invalid_argument for invalid dimensions, pixel data,
+// or an unsupported dithering method.
+framebuffer::Buffer quantize_to_framebuffer(
+    const DecodedImage& image,
+    Dither method = Dither::floyd_steinberg);
+
 } // namespace inkhibit::image
 
 #endif

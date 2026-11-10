@@ -46,6 +46,10 @@ target_include_directories(inkhibit_image PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
+target_link_libraries(inkhibit_image PUBLIC
+    inkhibit_framebuffer
+)
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(inkhibit_image PRIVATE
         -Wall -Wextra -Wpedantic
