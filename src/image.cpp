@@ -192,10 +192,14 @@ DecodedImage fit_to_canvas(const DecodedImage& image)
     const double scale =
         std::min({width_ratio, height_ratio, 1.0});
 
-    const int sized_w =
-        static_cast<int>(std::lround(image.width * scale));
-    const int sized_h =
-        static_cast<int>(std::lround(image.height * scale));
+    const int sized_w = std::max(
+            1,
+            static_cast<int>(std::lround(image.width * scale))
+            );
+    const int sized_h = std::max(
+            1,
+            static_cast<int>(std::lround(image.height * scale))
+        );
     const int offset_x = (canvas_w - sized_w) / 2;
     const int offset_y = (canvas_h - sized_h) / 2;
 
