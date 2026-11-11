@@ -19,6 +19,7 @@
 #define STBI_NO_PNM
 #define STBI_FAILURE_USERMSG
 #define STB_IMAGE_IMPLEMENTATION
+
 #include "../third_party/stb/stb_image.h"
 
 namespace inkhibit::image {
@@ -387,6 +388,99 @@ namespace inkhibit::image {
         }
 
         return buffer;
+    }
+
+    DecodedImage framebuffer_to_image(const framebuffer::Buffer& buffer) {
+        if (buffer.size() != framebuffer::framebuffer_size) {
+            throw std::invalid_argument(
+                    "Preview requires a 120000-byte framebuffer");
+        }
+
+        std::array<std::array<std::uint8_t, 3>, 16> colors{};
+        std::array<bool, 16> supported{};
+
+        for (const auto& entry : palette) {
+            const auto code = static_cast<std::uint8_t>(entry.color);
+            supported[code] = true;
+
+            for (std::size_t channel = 0; channel < 3; ++channel) {
+                colors[code][channel] = entry.rgb[channel];
+            }
+        }
+
+        constexpr std::size_t width =
+            framebuffer::landscape_width;
+        constexpr std::size_t height =
+            framebuffer::landscape_height;
+
+        DecodedImage result;
+        result.width = static_cast<int>(width);
+        result.height = static_cast<int>(height);
+        result.rgb.resize(width * height * 3);
+
+        for (std::size_t y = 0; y < height; ++y) {
+            for (std::size_t x = 0; x < width; ++x) {
+                const std::size_t native_x =
+                    framebuffer::native_width - 1 - y;
+
+                const std::size_t native_offset =
+                    x * (framebuffer::native_width / 2)
+                    + native_x / 2;
+
+                const auto byte = buffer[native_offset];
+
+                const auto code = static_cast<std::uint8_t>(
+                        native_x % 2 == 0
+                        ? byte >> 4
+                        : byte & 0x0F);
+
+                if (!supported[code]) {
+                    throw std::invalid_argument(
+                            "Unsupported framebuffer color code");
+                }
+
+                const std::size_t offset = (y * width + x) * 3;
+
+                for (std::size_t channel = 0; channel < 3; ++channel) {
+                    result.rgb[offset + channel] = colors[code][channel];
+                }
+            }
+        }
+
+        return result;
+    }
+
+
+    void write_preview_ppm(
+            const framebuffer::Buffer& buffer,
+            const std::filesystem::path& path)
+    {
+        const auto preview = framebuffer_to_image(buffer);
+
+        std::ofstream output(
+                path,
+                std::ios::binary | std::ios::trunc);
+
+        if (!output) {
+            throw std::runtime_error(
+                    "Cannot open preview file: " + path.string());
+        }
+
+        output
+            << "P6\n"
+            << preview.width << ' ' << preview.height << "\n"
+            << "255\n";
+
+        output.write(
+                reinterpret_cast<const char*>(preview.rgb.data()),
+                static_cast<std::streamsize>(preview.rgb.size()));
+
+        output.close();
+
+        if (!output) {
+            throw std::runtime_error(
+                    "Writing preview file failed: " + path.string());
+        }
     }
 
 } // namespace inkhibit::image

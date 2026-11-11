@@ -12,6 +12,8 @@ set(WAVESHARE_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/waveshare/lib"
 )
 
+##
+#framebuffer
 add_library(inkhibit_framebuffer STATIC
     src/framebuffer.cpp
 )
@@ -32,6 +34,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     )
 endif()
 
+##
+#image
 add_library(inkhibit_image STATIC
     src/image.cpp
 )
@@ -56,6 +60,28 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     )
 endif()
 
+##
+# preview image
+add_executable(inkhibit-preview
+    src/preview_image.cpp
+)
+
+target_link_libraries(inkhibit-preview PRIVATE
+    inkhibit_image
+)
+
+set_target_properties(inkhibit-preview PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit-preview PRIVATE
+        -Wall -Wextra -Wpedantic
+    )
+endif()
+
+##
+#
 if(INKHIBIT_BUILD_HARDWARE)
     find_path(LGPIO_INCLUDE_DIR NAMES lgpio.h REQUIRED)
     find_library(LGPIO_LIBRARY NAMES lgpio REQUIRED)
