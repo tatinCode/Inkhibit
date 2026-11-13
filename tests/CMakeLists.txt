@@ -264,3 +264,27 @@ foreach(case IN LISTS quantization_cases)
     # Some cases convert several full canvases; allow for Debug builds on Pi.
     set_tests_properties("quantization.${case}" PROPERTIES TIMEOUT 60)
 endforeach()
+
+# Exercise preview unpacking/file output and the actual hardware-free CLI.
+add_executable(inkhibit_preview_tests preview_tests.cpp)
+target_link_libraries(inkhibit_preview_tests PRIVATE inkhibit_image)
+target_compile_features(inkhibit_preview_tests PRIVATE cxx_std_17)
+set_target_properties(inkhibit_preview_tests PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(inkhibit_preview_tests inkhibit-preview)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_preview_tests PRIVATE
+        -Wall -Wextra -Wpedantic
+    )
+endif()
+
+set(preview_cases
+    palette_fills nibble_pairs orientation invalid_sizes invalid_codes round_trip
+    ppm_contents ppm_overwrite ppm_invalid_input ppm_open_error ppm_write_error
+    cli_help cli_usage cli_invalid_method cli_nearest cli_floyd_and_default
+    cli_input_errors cli_output_errors
+)
+foreach(case IN LISTS preview_cases)
+    add_test(NAME "preview.${case}" COMMAND inkhibit_preview_tests
+        "${case}" "$<TARGET_FILE:inkhibit-preview>")
+    set_tests_properties("preview.${case}" PROPERTIES TIMEOUT 60)
+endforeach()
