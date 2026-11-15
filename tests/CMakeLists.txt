@@ -240,3 +240,51 @@ foreach(case IN LISTS image_cases)
     add_test(NAME "image.${case}" COMMAND inkhibit_image_tests "${case}")
     set_tests_properties("image.${case}" PROPERTIES TIMEOUT 20)
 endforeach()
+
+# Quantization exercises real palette selection, diffusion, and native packing.
+add_executable(inkhibit_quantization_tests quantization_tests.cpp)
+target_link_libraries(inkhibit_quantization_tests PRIVATE inkhibit_image)
+target_compile_features(inkhibit_quantization_tests PRIVATE cxx_std_17)
+set_target_properties(inkhibit_quantization_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_quantization_tests PRIVATE
+        -Wall -Wextra -Wpedantic
+    )
+endif()
+
+set(quantization_cases
+    nearest_compatibility palette_fills orientation
+    diffusion_right diffusion_below_left diffusion_below diffusion_below_right
+    signed_error clipping known_patch edge_left edge_right bottom_right
+    default_method repeatability invalid_dimensions invalid_buffer_sizes
+    invalid_method
+)
+foreach(case IN LISTS quantization_cases)
+    add_test(NAME "quantization.${case}" COMMAND inkhibit_quantization_tests "${case}")
+    # Some cases convert several full canvases; allow for Debug builds on Pi.
+    set_tests_properties("quantization.${case}" PROPERTIES TIMEOUT 60)
+endforeach()
+
+# Exercise preview unpacking/file output and the actual hardware-free CLI.
+add_executable(inkhibit_preview_tests preview_tests.cpp)
+target_link_libraries(inkhibit_preview_tests PRIVATE inkhibit_image)
+target_compile_features(inkhibit_preview_tests PRIVATE cxx_std_17)
+set_target_properties(inkhibit_preview_tests PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(inkhibit_preview_tests inkhibit-preview)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_preview_tests PRIVATE
+        -Wall -Wextra -Wpedantic
+    )
+endif()
+
+set(preview_cases
+    palette_fills nibble_pairs orientation invalid_sizes invalid_codes round_trip
+    ppm_contents ppm_overwrite ppm_invalid_input ppm_open_error ppm_write_error
+    cli_help cli_usage cli_invalid_method cli_nearest cli_floyd_and_default
+    cli_input_errors cli_output_errors
+)
+foreach(case IN LISTS preview_cases)
+    add_test(NAME "preview.${case}" COMMAND inkhibit_preview_tests
+        "${case}" "$<TARGET_FILE:inkhibit-preview>")
+    set_tests_properties("preview.${case}" PROPERTIES TIMEOUT 60)
+endforeach()
