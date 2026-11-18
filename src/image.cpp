@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <utility>
 
 #define STBI_ONLY_JPEG
 #define STBI_ONLY_PNG
@@ -30,6 +31,74 @@ namespace inkhibit::image {
         constexpr int max_side = 8192;
         constexpr long long max_pixels = 33'000'000;
         constexpr std::uintmax_t max_file_bytes = 64'000'000;
+
+        struct OrientationTransform{
+            int source_width;
+            int source_height;
+            std::uint16_t orientation = 1;
+
+            bool swaps_axes() const noexcept{
+                return orientation >= 5 && orientation <= 8;
+            }
+
+            std::pair<int, int> map_source_pixel(int x, int y) const noexcept{
+                switch(orientation){
+                    case 1:     // normal
+                        return {
+                            x,
+                            y
+                        };
+
+                    case 2:     // mirror horizontally
+                        return {
+                            source_width - 1 - x,
+                            y
+                        };
+
+                    case 3:     // rotate 180 deg
+                        return {
+                            source_width - 1 - x,
+                            source_height - 1 - y
+                        };
+
+                    case 4:     // mirror vertically
+                        return {
+                            x,
+                            source_height - 1 - y,
+                        };
+
+                    case 5:     // transpose on the main diagonal
+                        return {
+                            y,
+                            x
+                        };
+
+                    case 6:     // rotate 90 deg clockwise
+                        return {
+                            source_height - 1 - y,
+                            x
+                        };
+
+                    case 7:     // reflect across the oposite diagonal
+                        return {
+                            source_height - 1 - y,
+                            source_width - 1 - x,
+                        };
+
+                    case 8:     // rotate 90 deg counter clockwise
+                        return {
+                            y,
+                            source_width - 1 - x
+                        };
+
+                    default:    //treats unsupported values as normal orientation
+                        return {
+                            x,
+                            y
+                        };
+                }
+            }
+        };
 
         // Initial palette references, subject to tuning after a physical run.
         struct PaletteEntry {
@@ -143,29 +212,43 @@ namespace inkhibit::image {
             throw std::runtime_error(failure("Image decoding failed: "));
         }
 
+        const OrientationTransform transform{width, height, 1};
+
         DecodedImage result;
-        result.width = width;
-        result.height = height;
-        result.rgb.resize(pixel_bytes(width, height));
+        result.width = transform.swaps_axes() ? height : width;
+        result.height = transform.swaps_axes() ? width : height;
+        result.rgb.resize(pixel_bytes(result.width, result.height));
 
-        const std::size_t pixel_count =
-            static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                const std::size_t source_offset =
+                    (static_cast<std::size_t>(y) * width + x) * 4;
 
-        for (std::size_t pixel = 0; pixel < pixel_count; ++pixel) {
-            const std::uint8_t* source = pixels.data + pixel * 4;
-            std::uint8_t* target = result.rgb.data() + pixel * 3;
-            const unsigned alpha = source[3];
+                const auto [destination_x, destination_y] =
+                    transform.map_source_pixel(x, y);
 
-            for (int channel = 0; channel < 3; ++channel) {
-                // Composite over white; rounding matches common practice.
-                target[channel] = static_cast<std::uint8_t>(
-                        (source[channel] * alpha
-                         + 0xFF * (0xFF - alpha)
-                         + 127)
-                        / 0xFF);
+                const std::size_t destination_offset =
+                    (static_cast<std::size_t>(destination_y) * result.width
+                     + destination_x)
+                    * 3;
+
+                const std::uint8_t* source =
+                    pixels.data + source_offset;
+
+                std::uint8_t* target =
+                    result.rgb.data() + destination_offset;
+
+                const unsigned alpha = source[3];
+
+                for (int channel = 0; channel < 3; ++channel) {
+                    target[channel] = static_cast<std::uint8_t>(
+                            (source[channel] * alpha
+                             + 255 * (255 - alpha)
+                             + 127)
+                            / 255);
+                }
             }
         }
-
         return result;
     }
 
