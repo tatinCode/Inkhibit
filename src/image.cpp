@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <utility>
 
 #define STBI_ONLY_JPEG
 #define STBI_ONLY_PNG
@@ -30,6 +31,312 @@ namespace inkhibit::image {
         constexpr int max_side = 8192;
         constexpr long long max_pixels = 33'000'000;
         constexpr std::uintmax_t max_file_bytes = 64'000'000;
+
+        struct OrientationTransform{
+            int source_width;
+            int source_height;
+            std::uint16_t orientation = 1;
+
+            bool swaps_axes() const noexcept{
+                return orientation >= 5 && orientation <= 8;
+            }
+
+            std::pair<int, int> map_source_pixel(int x, int y) const noexcept{
+                switch(orientation){
+                    case 1:     // normal
+                        return {
+                            x,
+                            y
+                        };
+
+                    case 2:     // mirror horizontally
+                        return {
+                            source_width - 1 - x,
+                            y
+                        };
+
+                    case 3:     // rotate 180 deg
+                        return {
+                            source_width - 1 - x,
+                            source_height - 1 - y
+                        };
+
+                    case 4:     // mirror vertically
+                        return {
+                            x,
+                            source_height - 1 - y,
+                        };
+
+                    case 5:     // transpose on the main diagonal
+                        return {
+                            y,
+                            x
+                        };
+
+                    case 6:     // rotate 90 deg clockwise
+                        return {
+                            source_height - 1 - y,
+                            x
+                        };
+
+                    case 7:     // reflect across the oposite diagonal
+                        return {
+                            source_height - 1 - y,
+                            source_width - 1 - x,
+                        };
+
+                    case 8:     // rotate 90 deg counter clockwise
+                        return {
+                            y,
+                            source_width - 1 - x
+                        };
+
+                    default:    //treats unsupported values as normal orientation
+                        return {
+                            x,
+                            y
+                        };
+                }
+            }
+        };
+
+        struct ExifReader {
+            const std::uint8_t* data = nullptr;
+            std::size_t size = 0;
+            bool little_endian = false;
+
+            bool read_u16(
+                    std::size_t offset,
+                    std::uint16_t& value) const noexcept {
+                if (data == nullptr
+                        || offset > size
+                        || size - offset < 2) {
+                    return false;
+                }
+
+                const std::uint16_t first = data[offset];
+                const std::uint16_t second = data[offset + 1];
+
+                if (little_endian) {
+                    value = static_cast<std::uint16_t>(
+                            first | (second << 8));
+                } else {
+                    value = static_cast<std::uint16_t>(
+                            (first << 8) | second);
+                }
+
+                return true;
+            }
+
+            bool read_u32(
+                    std::size_t offset,
+                    std::uint32_t& value) const noexcept {
+                if (data == nullptr
+                        || offset > size
+                        || size - offset < 4) {
+                    return false;
+                }
+
+                const std::uint32_t b0 = data[offset];
+                const std::uint32_t b1 = data[offset + 1];
+                const std::uint32_t b2 = data[offset + 2];
+                const std::uint32_t b3 = data[offset + 3];
+
+                if (little_endian) {
+                    value = b0
+                        | (b1 << 8)
+                        | (b2 << 16)
+                        | (b3 << 24);
+                } else {
+                    value = (b0 << 24)
+                        | (b1 << 16)
+                        | (b2 << 8)
+                        | b3;
+                }
+
+                return true;
+            }   //ends read_u32
+
+            bool read_tiff_header(
+                    std::uint32_t& directory_offset) noexcept
+            {
+                if (data == nullptr || size < 8) {
+                    return false;
+                }
+
+                if (data[0] == 'I' && data[1] == 'I') {
+                    little_endian = true;
+                } else if (data[0] == 'M' && data[1] == 'M') {
+                    little_endian = false;
+                } else {
+                    return false;
+                }
+
+                std::uint16_t magic = 0;
+                std::uint32_t first_directory = 0;
+
+                if (!read_u16(2, magic)
+                        || magic != 42
+                        || !read_u32(4, first_directory)) {
+                    return false;
+                }
+
+                if (first_directory < 8
+                        || first_directory > size
+                        || size - first_directory < 2) {
+                    return false;
+                }
+
+                directory_offset = first_directory;
+                return true;
+            }   //end of read_tiff_header
+
+            bool read_orientation(std::uint16_t& value) noexcept {
+                std::uint32_t directory_offset = 0;
+                std::uint16_t entry_count = 0;
+
+                if (!read_tiff_header(directory_offset)
+                        || !read_u16(directory_offset, entry_count)) {
+                    return false;
+                }
+
+                const std::size_t entries_start =
+                    static_cast<std::size_t>(directory_offset) + 2;
+
+                const std::size_t remaining = size - entries_start;
+
+                // Each entry occupies 12 bytes. The directory ends with a
+                // four-byte offset to the next directory.
+                if (remaining < 4
+                        || entry_count > (remaining - 4) / 12) {
+                    return false;
+                }
+
+                for (std::size_t i = 0; i < entry_count; ++i) {
+                    const std::size_t entry = entries_start + i * 12;
+
+                    std::uint16_t tag = 0;
+
+                    if (!read_u16(entry, tag)) {
+                        return false;
+                    }
+
+                    if (tag != 0x0112) {
+                        continue;
+                    }
+
+                    std::uint16_t type = 0;
+                    std::uint32_t count = 0;
+                    std::uint16_t orientation = 0;
+
+                    if (!read_u16(entry + 2, type)
+                            || type != 3
+                            || !read_u32(entry + 4, count)
+                            || count != 1
+                            || !read_u16(entry + 8, orientation)
+                            || orientation < 1
+                            || orientation > 8) {
+                        return false;
+                    }
+
+                    value = orientation;
+                    return true;
+                }
+
+                return false;
+            }   //ends read_orientation
+
+        };  //ends ExifReader
+
+        std::uint16_t read_jpeg_orientation(
+                const std::uint8_t* data,
+                std::size_t size) noexcept {
+            // JPEG files begin with the Start Of Image marker: FF D8.
+            if (data == nullptr
+                    || size < 2
+                    || data[0] != 0xFF
+                    || data[1] != 0xD8) {
+                return 1;
+            }
+
+            constexpr std::array<std::uint8_t, 6> exif_signature{
+                'E', 'x', 'i', 'f', 0, 0
+            };
+
+            std::size_t position = 2;
+
+            while (position < size) {
+                if (data[position] != 0xFF) {
+                    return 1;
+                }
+
+                // JPEG permits repeated FF padding bytes before a marker code.
+                while (position < size && data[position] == 0xFF) {
+                    ++position;
+                }
+
+                if (position == size) {
+                    return 1;
+                }
+
+                const auto marker = data[position++];
+
+                // Stop at compressed pixel data or the end of the image.
+                if (marker == 0xDA || marker == 0xD9) {
+                    break;
+                }
+
+                if (marker == 0x00 || marker == 0xD8) {
+                    return 1;
+                }
+
+                // These standalone markers have no length field.
+                if (marker == 0x01
+                        || (marker >= 0xD0 && marker <= 0xD7)) {
+                    continue;
+                }
+
+                if (size - position < 2) {
+                    return 1;
+                }
+
+                // JPEG segment lengths are always big-endian.
+                const std::size_t length =
+                    (static_cast<std::size_t>(data[position]) << 8)
+                    | data[position + 1];
+
+                if (length < 2 || length > size - position) {
+                    return 1;
+                }
+
+                const std::size_t payload_start = position + 2;
+                const std::size_t payload_size = length - 2;
+
+                // APP1 marker plus the six-byte Exif signature.
+                if (marker == 0xE1
+                        && payload_size >= exif_signature.size()
+                        && std::equal(
+                            exif_signature.begin(),
+                            exif_signature.end(),
+                            data + payload_start)) {
+                    ExifReader reader{
+                        data + payload_start + exif_signature.size(),
+                        payload_size - exif_signature.size(),
+                        false
+                    };
+
+                    std::uint16_t orientation = 1;
+
+                    if (reader.read_orientation(orientation)) {
+                        return orientation;
+                    }
+                }
+
+                position += length;
+            }
+
+            return 1;
+        }
 
         // Initial palette references, subject to tuning after a physical run.
         struct PaletteEntry {
@@ -143,29 +450,49 @@ namespace inkhibit::image {
             throw std::runtime_error(failure("Image decoding failed: "));
         }
 
+        const auto orientation = read_jpeg_orientation(data, size);
+
+        const OrientationTransform transform{
+            width,
+                height,
+                orientation
+        };
+
         DecodedImage result;
-        result.width = width;
-        result.height = height;
-        result.rgb.resize(pixel_bytes(width, height));
+        result.width = transform.swaps_axes() ? height : width;
+        result.height = transform.swaps_axes() ? width : height;
+        result.rgb.resize(pixel_bytes(result.width, result.height));
 
-        const std::size_t pixel_count =
-            static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                const std::size_t source_offset =
+                    (static_cast<std::size_t>(y) * width + x) * 4;
 
-        for (std::size_t pixel = 0; pixel < pixel_count; ++pixel) {
-            const std::uint8_t* source = pixels.data + pixel * 4;
-            std::uint8_t* target = result.rgb.data() + pixel * 3;
-            const unsigned alpha = source[3];
+                const auto [destination_x, destination_y] =
+                    transform.map_source_pixel(x, y);
 
-            for (int channel = 0; channel < 3; ++channel) {
-                // Composite over white; rounding matches common practice.
-                target[channel] = static_cast<std::uint8_t>(
-                        (source[channel] * alpha
-                         + 0xFF * (0xFF - alpha)
-                         + 127)
-                        / 0xFF);
+                const std::size_t destination_offset =
+                    (static_cast<std::size_t>(destination_y) * result.width
+                     + destination_x)
+                    * 3;
+
+                const std::uint8_t* source =
+                    pixels.data + source_offset;
+
+                std::uint8_t* target =
+                    result.rgb.data() + destination_offset;
+
+                const unsigned alpha = source[3];
+
+                for (int channel = 0; channel < 3; ++channel) {
+                    target[channel] = static_cast<std::uint8_t>(
+                            (source[channel] * alpha
+                             + 255 * (255 - alpha)
+                             + 127)
+                            / 255);
+                }
             }
         }
-
         return result;
     }
 
