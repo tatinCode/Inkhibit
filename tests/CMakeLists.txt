@@ -235,6 +235,8 @@ set(image_cases
     fit.exact fit.small fit.horizontal fit.vertical fit.both fit.mixed
     fit.fractional fit.thin_vertical fit.thin_horizontal fit.invalid
     color.palette color.hues color.tie pipeline_orientation
+    exif.little_endian exif.big_endian exif.directory exif.segments
+    exif.invalid_fields exif.segment_bounds exif.png_unchanged
 )
 foreach(case IN LISTS image_cases)
     add_test(NAME "image.${case}" COMMAND inkhibit_image_tests "${case}")
@@ -280,7 +282,7 @@ endif()
 set(preview_cases
     palette_fills nibble_pairs orientation invalid_sizes invalid_codes round_trip
     ppm_contents ppm_overwrite ppm_invalid_input ppm_open_error ppm_write_error
-    cli_help cli_usage cli_invalid_method cli_nearest cli_floyd_and_default
+    cli_help cli_usage cli_invalid_method cli_nearest cli_floyd_and_default cli_exif_rotation
     cli_input_errors cli_output_errors
 )
 foreach(case IN LISTS preview_cases)

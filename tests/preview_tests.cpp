@@ -1,4 +1,5 @@
 #include "inkhibit/image.hpp"
+#include "exif_fixtures.hpp"
 #include "image_fixtures.hpp"
 
 #include <algorithm>
@@ -473,6 +474,26 @@ void test_cli_floyd_and_default()
     REQUIRE(read_file(input) == original);
 }
 
+void test_cli_exif_rotation()
+{
+    TemporaryDirectory directory;
+    const auto input = directory.path / "rotated.jpg";
+    const auto output = directory.path / "preview.ppm";
+    const auto bytes = exif_fixtures::jpeg({exif_fixtures::exif(exif_fixtures::tiff(6))});
+    write_file(input, std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
+    require_exit(run_cli(directory, {"--dither", "nearest", input.string(), output.string()}), 0);
+
+    // Source rows ABC / DEF become DA / EB / FC, centered as a 2x3 image.
+    auto expected = white_canvas();
+    set_expected_pixel(expected, 299, 198, palette[3].rgb); // red
+    set_expected_pixel(expected, 300, 198, palette[0].rgb); // black
+    set_expected_pixel(expected, 299, 199, palette[4].rgb); // blue
+    set_expected_pixel(expected, 300, 199, palette[1].rgb); // white
+    set_expected_pixel(expected, 299, 200, palette[5].rgb); // green
+    set_expected_pixel(expected, 300, 200, palette[2].rgb); // yellow
+    REQUIRE(read_file(output) == expected_ppm(expected));
+}
+
 void test_cli_input_errors()
 {
     TemporaryDirectory directory;
@@ -536,6 +557,7 @@ int main(int argc, char** argv)
             {"cli_invalid_method", test_cli_invalid_method},
             {"cli_nearest", test_cli_nearest},
             {"cli_floyd_and_default", test_cli_floyd_and_default},
+            {"cli_exif_rotation", test_cli_exif_rotation},
             {"cli_input_errors", test_cli_input_errors},
             {"cli_output_errors", test_cli_output_errors}
         };

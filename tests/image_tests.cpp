@@ -1,4 +1,5 @@
 #include "inkhibit/image.hpp"
+#include "exif_fixtures.hpp"
 #include "image_fixtures.hpp"
 
 #include <algorithm>
@@ -440,6 +441,134 @@ void test_pipeline_orientation()
     REQUIRE(buffer == expected);
 }
 
+namespace ex = exif_fixtures;
+
+// Expected row-major layouts for stored rows ABC / DEF. Comparing to the
+// decoded untagged pixels avoids depending on JPEG rounding across platforms.
+struct Layout { int width, height; const char* rows; };
+constexpr std::array<Layout, 8> layouts{{
+    {3, 2, "ABCDEF"}, {3, 2, "CBAFED"}, {3, 2, "FEDCBA"}, {3, 2, "DEFABC"},
+    {2, 3, "ADBECF"}, {2, 3, "DAEBFC"}, {2, 3, "FCEBDA"}, {2, 3, "CFBEAD"}
+}};
+
+void require_layout(const ex::Bytes& bytes, int orientation)
+{
+    static const auto stored = [] {
+        const auto jpeg = ex::jpeg();
+        return img::decode_image_bytes(jpeg.data(), jpeg.size());
+    }();
+    REQUIRE(stored.width == 3 && stored.height == 2 && stored.rgb.size() == 18);
+    const auto actual = img::decode_image_bytes(bytes.data(), bytes.size());
+    const auto& expected = layouts.at(orientation - 1);
+    REQUIRE(actual.width == expected.width && actual.height == expected.height);
+    REQUIRE(actual.rgb.size() == 18);
+    for (int i = 0; i < 6; ++i) {
+        const int src = expected.rows[i] - 'A';
+        const auto got = pixel_at(actual, i % expected.width, i / expected.width);
+        const auto want = pixel_at(stored, src % 3, src / 3);
+        if (got != want) {
+            const auto rgb = [](Rgb p) { return std::to_string(p[0]) + ","
+                + std::to_string(p[1]) + "," + std::to_string(p[2]); };
+            throw std::runtime_error("Orientation " + std::to_string(orientation)
+                + ", pixel " + std::to_string(i) + ": expected " + rgb(want) + ", got " + rgb(got));
+        }
+    }
+}
+
+void test_exif_transforms(bool little)
+{
+    for (std::uint8_t n = 1; n <= 8; ++n) {
+        require_layout(ex::jpeg({ex::exif(ex::tiff(n, little))}), n);
+    }
+}
+
+void test_exif_directory()
+{
+    // Put IFD0 at byte 260, with an unrelated SHORT tag before orientation.
+    // Neither the directory nor the orientation entry is at the usual offset.
+    auto t = ex::tiff(7);
+    t.insert(t.begin() + 8, 252, 0);
+    t[4] = 4;
+    t[5] = 1;
+    t[260] = 2;
+    t.insert(t.begin() + 262, {0x03,1, 3,0, 1,0,0,0, 1,0,0,0});
+    require_layout(ex::jpeg({ex::exif(t)}), 7);
+
+    // Only the thumbnail IFD has orientation: it must not rotate the main image.
+    t = ex::tiff(6);
+    t[10] = 3; // IFD0 tag 0x0103, not orientation.
+    t[22] = 26; // Next IFD immediately after IFD0.
+    const auto thumbnail = ex::tiff(8);
+    t.insert(t.end(), thumbnail.begin() + 8, thumbnail.end());
+    require_layout(ex::jpeg({ex::exif(t)}), 1);
+}
+
+void test_exif_segments()
+{
+    // An Exif signature in APP2, and TIFF bytes in a non-Exif APP1, are decoys.
+    auto app2 = ex::exif(ex::tiff(8));
+    app2[1] = 0xe2;
+    auto other_app1 = ex::exif(ex::tiff(5));
+    other_app1[9] = 'X'; // Only the last signature byte differs.
+    auto valid = ex::exif(ex::tiff(6, false));
+    valid.insert(valid.begin(), 0xff); // Legal marker fill byte.
+    require_layout(ex::jpeg({app2, other_app1}), 1);
+    require_layout(ex::jpeg({app2, other_app1, ex::exif({}), valid,
+        ex::exif(ex::tiff(8))}), 6); // First usable Exif wins.
+
+    auto after_eoi = ex::jpeg();
+    after_eoi.insert(after_eoi.end(), valid.begin(), valid.end());
+    require_layout(after_eoi, 1);
+}
+
+void test_exif_invalid_fields()
+{
+    const auto fallback = [](const ex::Bytes& t) {
+        require_layout(ex::jpeg({ex::exif(t)}), 1);
+    };
+    for (const std::uint8_t value : {0, 9, 255}) fallback(ex::tiff(value));
+    const auto valid = ex::tiff(6);
+    for (const auto& change : std::initializer_list<std::pair<int, std::uint8_t>>{
+            {0,'M'}, {2,43}, {4,4}, {7,255}, {8,2}, {10,0x13},
+            {12,4}, {14,0}, {14,2}, {17,1}, {19,1}}) {
+        // Order marker, magic, offset, table size, tag, type, count or value.
+        auto t = valid;
+        t[change.first] = change.second;
+        fallback(t);
+    }
+}
+
+void test_exif_segment_bounds()
+{
+    const auto valid = ex::tiff(6);
+    for (std::size_t n = 0; n < valid.size(); ++n) {
+        // The enclosing JPEG remains decodable even when metadata is truncated.
+        require_layout(ex::jpeg({ex::exif({valid.begin(), valid.begin() + n})}), 1);
+    }
+    // The offset would find a complete IFD in the following comment segment
+    // if the reader used the remaining JPEG length instead of the APP1 length.
+    ex::Bytes header(valid.begin(), valid.begin() + 8);
+    header[4] = 12;
+    require_layout(ex::jpeg({ex::exif(header),
+        ex::segment(0xfe, {valid.begin() + 8, valid.end()})}), 1);
+}
+
+void test_exif_png_unchanged()
+{
+    // A valid ancillary PNG eXIf chunk containing orientation 6. JPEG-only
+    // normalization must leave the 2x2 PNG's asymmetric pixel order unchanged.
+    ex::Bytes png(fixtures::png_rgb, fixtures::png_rgb + 33); // through IHDR
+    const auto t = ex::tiff(6);
+    png.insert(png.end(), {0,0,0,26, 'e','X','I','f'});
+    png.insert(png.end(), t.begin(), t.end());
+    png.insert(png.end(), {0xb7,0x48,0x11,0x29}); // CRC32 of type and payload
+    png.insert(png.end(), fixtures::png_rgb + 33, fixtures::png_rgb + sizeof fixtures::png_rgb);
+    const auto actual = img::decode_image_bytes(png.data(), png.size());
+    REQUIRE(actual.width == 2 && actual.height == 2);
+    const ex::Bytes expected{255,0,0, 0,255,0, 0,0,255, 12,34,56};
+    REQUIRE(actual.rgb == expected);
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -473,7 +602,14 @@ int main(int argc, char** argv)
             {"color.palette", test_color_palette},
             {"color.hues", test_color_hues},
             {"color.tie", test_color_tie},
-            {"pipeline_orientation", test_pipeline_orientation}
+            {"pipeline_orientation", test_pipeline_orientation},
+            {"exif.little_endian", [] { test_exif_transforms(true); }},
+            {"exif.big_endian", [] { test_exif_transforms(false); }},
+            {"exif.directory", test_exif_directory},
+            {"exif.segments", test_exif_segments},
+            {"exif.invalid_fields", test_exif_invalid_fields},
+            {"exif.segment_bounds", test_exif_segment_bounds},
+            {"exif.png_unchanged", test_exif_png_unchanged}
         };
         for (const auto& test : tests) {
             if (name == test.first) {
