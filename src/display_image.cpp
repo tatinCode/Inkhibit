@@ -36,7 +36,9 @@ namespace {
             << "Larger images are proportionally downscaled; smaller images\n"
             << "are centered on white. Transparency is composited over white.\n"
             << "State directory: /var/lib/inkhibit\n"
-            << "Minimum refresh cooldown: 180 seconds after shutdown.\n";
+            << "Minimum refresh cooldown: 180 seconds after shutdown.\n"
+            << "Waits automatically for an active cooldown.\n"
+            << "Press Ctrl+C while waiting to cancel the pending update.\n";
     }
 
 } // end of namespace inkhibit
