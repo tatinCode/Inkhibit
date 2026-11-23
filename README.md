@@ -19,7 +19,7 @@ Spectra 6**, using the model-specific `EPD_4in0e` driver.
   `/api/health` endpoint. It does not access the panel yet.
 - The maintainer has verified the test pattern and dithered image display on
   the physical panel, including automatic cooldown waiting and cancellation.
-  All **181 CTest cases pass** on the development machine.
+  All **181 CTest cases pass** on the development machine and Raspberry Pi.
 
 The gallery prototype in [web/](web/README.md) still keeps its artwork and
 previews in the browser. Sending an image from the gallery to the frame is the

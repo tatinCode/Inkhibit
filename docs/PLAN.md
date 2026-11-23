@@ -76,7 +76,7 @@ an image, refreshes the panel once, and puts it to sleep. Phase 1 is complete.
 
 | Step | Status |
 | --- | --- |
-| 1. Serve the gallery (`inkhibit-server`) | Implemented and tested on the development machine; Pi check pending. |
+| 1. Serve the gallery (`inkhibit-server`) | Implemented; all tests pass on the development machine and the Pi. Opening the gallery from another device is pending. |
 | 2. Send an image to the frame (`POST /api/display`) | Next. |
 | 3. Report display status (`GET /api/status`) and enable the gallery's Display button | Planned. |
 | 4. Server-side gallery storage, authentication, systemd service | Later. |
@@ -101,9 +101,9 @@ Step 1 decisions:
 - The maintainer built the hardware targets on the Pi and confirmed the
   six-color bars and upper-left L marker on the actual panel, then reported the
   setup working after the chip-select correction.
-- All **181 CTest cases pass** on the development machine, including eight
-  EXIF, nine cooldown, and fifteen server cases. The maintainer reported the
-  previous 166-case suite passing on the Raspberry Pi. Automated hardware tests
+- All **181 CTest cases pass** on the development machine and, as reported by
+  the maintainer, on the Raspberry Pi. The suite includes eight EXIF, nine
+  cooldown, and fifteen server cases. Automated hardware tests
   use fakes and simulated clocks; physical validation is separate.
 - The maintainer generated previews with both methods and verified dithered
   image output, automatic cooldown waiting, and Ctrl+C cancellation on the Pi.
@@ -177,8 +177,7 @@ Step 1 decisions:
 
 ### Next implementation increment
 
-Build and run the 181-case suite on the Pi, then start `inkhibit-server` there
-and open the gallery from another device.
+Start `inkhibit-server` on the Pi and open the gallery from another device.
 
 Then add `POST /api/display`: the browser sends one image, and the server
 displays it through the existing image pipeline and display guard. Decide
