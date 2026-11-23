@@ -128,6 +128,7 @@ if(INKHIBIT_BUILD_HARDWARE)
     add_library(inkhibit_display STATIC
         src/display.cpp
         src/display_guard.cpp
+        src/display_cooldown.cpp
     )
 
     target_compile_features(inkhibit_display PUBLIC cxx_std_17)

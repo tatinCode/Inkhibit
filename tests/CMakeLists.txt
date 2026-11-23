@@ -134,6 +134,7 @@ endif()
 # definitions keep the production library and compile check unaffected.
 add_library(inkhibit_guard_under_test OBJECT
     "${PROJECT_SOURCE_DIR}/src/display_guard.cpp"
+    "${PROJECT_SOURCE_DIR}/src/display_cooldown.cpp"
 )
 target_compile_definitions(inkhibit_guard_under_test PRIVATE
     clock_gettime=inkhibit_guard_test_clock_gettime
