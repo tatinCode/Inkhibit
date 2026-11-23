@@ -98,6 +98,7 @@ set(display_check_sources
     "${PROJECT_SOURCE_DIR}/src/display.cpp"
     "${PROJECT_SOURCE_DIR}/src/display_guard.cpp"
     "${PROJECT_SOURCE_DIR}/src/display_image.cpp"
+    "${PROJECT_SOURCE_DIR}/src/cooldown_wait.cpp"
 )
 if(EXISTS "${PROJECT_SOURCE_DIR}/src/display_test.cpp")
     list(APPEND display_check_sources "${PROJECT_SOURCE_DIR}/src/display_test.cpp")
@@ -134,6 +135,7 @@ endif()
 # definitions keep the production library and compile check unaffected.
 add_library(inkhibit_guard_under_test OBJECT
     "${PROJECT_SOURCE_DIR}/src/display_guard.cpp"
+    "${PROJECT_SOURCE_DIR}/src/display_cooldown.cpp"
 )
 target_compile_definitions(inkhibit_guard_under_test PRIVATE
     clock_gettime=inkhibit_guard_test_clock_gettime
@@ -193,6 +195,36 @@ set(guard_cases
 foreach(case IN LISTS guard_cases)
     add_test(NAME "guard.${case}" COMMAND inkhibit_display_tests "guard.${case}")
     set_tests_properties("guard.${case}" PROPERTIES TIMEOUT 20)
+endforeach()
+
+# Exercise the real image CLI and sleep helper with a simulated boot clock.
+# Keep both symbol substitutions confined to this test copy.
+add_library(inkhibit_cooldown_cli_under_test OBJECT
+    "${PROJECT_SOURCE_DIR}/src/display_image.cpp"
+    "${PROJECT_SOURCE_DIR}/src/cooldown_wait.cpp"
+)
+target_compile_definitions(inkhibit_cooldown_cli_under_test PRIVATE
+    main=inkhibit_test_display_main
+    nanosleep=inkhibit_cooldown_test_nanosleep
+)
+
+add_executable(inkhibit_cooldown_tests cooldown_tests.cpp)
+target_link_libraries(inkhibit_cooldown_tests PRIVATE
+    inkhibit_cooldown_cli_under_test inkhibit_guard_under_test inkhibit_image
+)
+foreach(target IN ITEMS inkhibit_cooldown_cli_under_test inkhibit_cooldown_tests)
+    target_compile_features(${target} PRIVATE cxx_std_17)
+    set_target_properties(${target} PROPERTIES CXX_EXTENSIONS OFF)
+    target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}/include")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endforeach()
+
+foreach(case IN ITEMS durations chunks retry recheck cancel recovery
+        busy hardware_error signal_during_update)
+    add_test(NAME "cooldown.${case}" COMMAND inkhibit_cooldown_tests "${case}")
+    set_tests_properties("cooldown.${case}" PROPERTIES TIMEOUT 10)
 endforeach()
 
 # Pure framebuffer tests: no driver, fake hardware, or Linux state files.

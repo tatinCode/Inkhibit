@@ -1,5 +1,7 @@
 #include "inkhibit/display.hpp"
 #include "inkhibit/image.hpp"
+#include "inkhibit/cooldown_wait.hpp"
+#include "inkhibit/display_cooldown.hpp"
 
 #include <csignal>
 #include <exception>
@@ -37,7 +39,7 @@ namespace {
             << "Minimum refresh cooldown: 180 seconds after shutdown.\n";
     }
 
-} // namespace
+} // end of namespace inkhibit
 
 int main(int argc, char** argv)
 {
@@ -70,6 +72,7 @@ int main(int argc, char** argv)
         print_usage();
         return 2;
     }
+
     if (std::signal(SIGINT, handle_signal) == SIG_ERR
             || std::signal(SIGTERM, handle_signal) == SIG_ERR) {
         std::cerr << "Could not install termination handlers.\n";
@@ -80,22 +83,48 @@ int main(int argc, char** argv)
         const auto image = img::decode_image(image_path);
         const auto framebuffer = make_frame(image, method);
 
-        if (requested_signal != 0) {
-            return 128 + requested_signal;
+        while (requested_signal == 0){
+            try {
+                inkhibit::Display display;
+
+                if (requested_signal != 0){
+                    break;
+                }
+
+                std::cout
+                    << "Updating the display from " << image_path << ". "
+                    << "A termination request will allow the panel operation "
+                    << "and cleanup to finish.\n"
+                    << std::flush;
+
+                display.show(framebuffer);
+
+                std::cout
+                    << "Update complete. Panel slept and resources were released.\n";
+
+                break;
+
+            } catch (const inkhibit::DisplayCooldown& cooldown){
+                if (requested_signal != 0){
+                    break;
+                }
+
+                const auto remaining_ms = cooldown.remaining_ms();
+                const auto seconds =
+                    (remaining_ms / 1000) + (remaining_ms % 1000 != 0);
+
+                std::cout
+                    << "Display cooldown: waiting " << seconds
+                    << " seconds before retrying. Press Ctrl+C to cancel.\n"
+                    << std::flush;
+
+                if (!inkhibit::wait_for_cooldown(
+                            remaining_ms,
+                            requested_signal)){
+                    break;
+                }
+            }
         }
-
-        inkhibit::Display display;
-
-        std::cout
-            << "Updating the display from " << image_path << ". "
-            << "A termination request will allow the panel operation "
-            << "and cleanup to finish.\n"
-            << std::flush;
-
-        display.show(framebuffer);
-
-        std::cout
-            << "Update complete. Panel slept and resources were released.\n";
 
         return requested_signal == 0 ? 0 : 128 + requested_signal;
     } catch (const std::exception& error) {
