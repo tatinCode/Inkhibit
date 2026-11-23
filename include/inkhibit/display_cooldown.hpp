@@ -1,5 +1,5 @@
-#ifndef INKHIBIT_DISPLAY_COOLDOWN
-#define INKHIBIT_DISPLAY_COOLDOWN
+#ifndef INKHIBIT_DISPLAY_COOLDOWN_HPP
+#define INKHIBIT_DISPLAY_COOLDOWN_HPP
 
 #include <cstdint>
 #include <string>

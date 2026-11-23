@@ -129,6 +129,7 @@ if(INKHIBIT_BUILD_HARDWARE)
         src/display.cpp
         src/display_guard.cpp
         src/display_cooldown.cpp
+        src/cooldown_wait.cpp
     )
 
     target_compile_features(inkhibit_display PUBLIC cxx_std_17)
