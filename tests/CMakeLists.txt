@@ -227,6 +227,30 @@ foreach(case IN ITEMS durations chunks retry recheck cancel recovery
     set_tests_properties("cooldown.${case}" PROPERTIES TIMEOUT 10)
 endforeach()
 
+# Exercise the real HTTP configuration and the actual inkhibit-server CLI on
+# free loopback ports. No display hardware is involved.
+add_executable(inkhibit_server_tests server_tests.cpp)
+target_link_libraries(inkhibit_server_tests PRIVATE inkhibit_server)
+target_compile_features(inkhibit_server_tests PRIVATE cxx_std_17)
+set_target_properties(inkhibit_server_tests PROPERTIES CXX_EXTENSIONS OFF)
+add_dependencies(inkhibit_server_tests inkhibit-server)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_server_tests PRIVATE
+        -Wall -Wextra -Wpedantic
+    )
+endif()
+
+set(server_cases
+    health static_files frontend not_found traversal symlink_escape
+    invalid_root duplicate_port rebind
+    cli_help cli_usage cli_invalid_root cli_port_in_use cli_signals
+)
+foreach(case IN LISTS server_cases)
+    add_test(NAME "server.${case}" COMMAND inkhibit_server_tests
+        "${case}" "$<TARGET_FILE:inkhibit-server>" "${PROJECT_SOURCE_DIR}/web")
+    set_tests_properties("server.${case}" PROPERTIES TIMEOUT 30)
+endforeach()
+
 # Pure framebuffer tests: no driver, fake hardware, or Linux state files.
 add_executable(inkhibit_framebuffer_tests framebuffer_tests.cpp)
 target_link_libraries(inkhibit_framebuffer_tests PRIVATE inkhibit_framebuffer)

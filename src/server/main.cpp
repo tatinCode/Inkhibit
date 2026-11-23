@@ -56,7 +56,7 @@ namespace{
     //every option takes a value. Returns false for anything unrecognized.
     bool parse_options(int argc, char** argv, Options& options){
         //skipping arg[0]
-        for (int i = 1; i < argc; ++i){
+        for (int i = 1; i < argc; i += 2){
             if(i + 1 >= argc){
                 return false;
             }
