@@ -10,15 +10,13 @@ The display foundation is working on a **Raspberry Pi Zero 2 W** running
 **Raspberry Pi OS Lite 64-bit**, with a **Waveshare 4-inch e-Paper HAT+ (E),
 Spectra 6**, using the model-specific `EPD_4in0e` driver.
 
-- The maintainer has confirmed the six-color test pattern and corner L marker
-  on the physical panel.
-- The C++17 display wrapper validates framebuffers, performs one update per
-  session, sleeps the panel, and releases GPIO/SPI resources.
-- Exclusive process locking and a persistent 180-second cooldown are implemented.
-- All **76 CTest cases pass** on the development machine and, as reported by the
-  maintainer, on the Pi.
-- The next milestone is the native JPG/PNG image-processing pipeline. The
-  `inkhibit-display painting.jpg` command is a planned Phase 1 deliverable.
+- `inkhibit-display` shows JPEG and PNG images. It performs one update, puts
+  the panel to sleep, releases GPIO/SPI resources, and starts a persistent
+  180-second cooldown. A process lock prevents concurrent updates.
+- `inkhibit-preview` saves a 600 × 400 PPM preview from the same framebuffer
+  without accessing the panel.
+- The maintainer has verified the test pattern and dithered image display on
+  the physical panel. All **157 CTest cases pass** on the development machine.
 
 A browser-only gallery prototype is available in [web/](web/README.md). Its
 gallery and previews run locally in the browser; integration with the Pi backend
@@ -56,6 +54,9 @@ Coverage includes:
   sequencing, deep sleep, and one-shot wrapper behavior.
 - Process locking, persistent cooldowns, interrupted sessions, boot changes,
   malformed and negative timestamps, and invalid state-file paths.
+- JPEG and PNG decoding, transparency, all eight JPEG EXIF orientations,
+  canvas fitting, six-color quantization, and native framebuffer packing.
+- Floyd–Steinberg dithering, PPM preview output, and preview CLI behavior.
 
 The unchecked vendor branch and the C++ sources also receive compile-only
 checks. CTest uses fake hardware even when the hardware targets are enabled;
@@ -133,6 +134,38 @@ without updating the panel. Allow at least **180 seconds after successful
 shutdown** before another refresh. During an update, SIGINT/SIGTERM requests
 allow the panel operation and cleanup to finish before the program exits.
 
+## Display an image or save a preview
+
+After a hardware-enabled build on the Pi, display a JPEG or PNG from the
+repository root. Run one of these commands when the cooldown permits:
+
+```sh
+# Floyd–Steinberg dithering is the default.
+sudo ./build/inkhibit-display painting.jpg
+
+# Use nearest-color conversion instead.
+sudo ./build/inkhibit-display --dither nearest painting.png
+```
+
+Both commands fit the image inside the 600 × 400 landscape canvas, preserving
+its aspect ratio without upscaling. Margins are white, and transparent PNG
+pixels are composited over white. JPEGs are rotated or mirrored according to
+their EXIF orientation before fitting; missing or unusable orientation
+metadata leaves the stored pixel order intact.
+
+To compare methods without a display, use the build from
+[Automated tests](#automated-tests-no-hardware-required):
+
+```sh
+./build-tests/inkhibit-preview painting.jpg dithered.ppm
+./build-tests/inkhibit-preview --dither nearest painting.jpg nearest.ppm
+```
+
+On the Pi, the hardware-enabled build also provides `./build/inkhibit-preview`.
+Previewing needs no `sudo` and does not start a cooldown. The binary P6 PPM
+uses RGB approximations of the six panel colors, so its colors may look
+different from the panel's.
+
 ## GPIO ownership and persistent state
 
 GPIO numbers below use BCM numbering:
@@ -165,18 +198,7 @@ timestamps are parsed strictly with `std::from_chars`, including rejection of
 negative values. Oversized or nonregular state files are rejected before
 hardware initialization.
 
-With no saved state, the guard waits until system uptime reaches 180 seconds
-before allowing the first update. Preserve the state directory between runs so
-the cooldown remains effective across separate invocations.
-
-## Next milestone: image processing
-
-First extract the tested landscape-to-native mapping and pixel-packing code
-into hardware-independent framebuffer helpers. Then add JPG/PNG loading,
-resizing/cropping, nearest-color conversion, and Floyd–Steinberg dithering, with
-PC tests and preview output.
-
-The target is a 600 × 400 landscape image mapped into the driver's 400 × 600
-native layout: four bits per pixel, high nibble first, totaling **120,000 bytes**.
-See [docs/PLAN.md](docs/PLAN.md) for the framebuffer contract and Phase 1
-definition of done.
+With no saved state, the guard rejects updates until system uptime reaches
+180 seconds. If the command reports a cooldown, retry after the reported wait.
+Preserve the state directory between runs so the cooldown remains effective
+across separate invocations.

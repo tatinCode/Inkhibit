@@ -40,7 +40,8 @@ Official model-specific demo archive:
 - C++17 for the display wrapper and C11 for the checked adapter and driver tests.
 - CMake.
 - Waveshare's existing C display driver.
-- A lightweight native image-processing library; selection remains open.
+- Vendored stb_image v2.30 for JPEG and PNG decoding; native C++ for orientation,
+  canvas fitting, dithering, and framebuffer packing.
 - cpp-httplib for the eventual HTTP server.
 - HTML, CSS, and vanilla JavaScript for the eventual frontend.
 - NetworkManager for eventual Wi-Fi provisioning.
@@ -65,21 +66,25 @@ to a later phase.
 | --- | --- |
 | 1. Hardware and driver validation | Complete for the single-refresh test-pattern foundation; Pi smoke test reported successful by the maintainer. |
 | 2. C++ display interface | Complete; wrapper, lifecycle/error handling, process lock, and persistent cooldown implemented and tested. |
-| 3. Automatic image processing | Next; extract framebuffer helpers before adding image loading and conversion. |
-| 4. Command-line image application | Pending the image pipeline. |
+| 3. Automatic image processing | Implemented: JPEG/PNG decoding, JPEG EXIF orientation, aspect-preserving fitting, and six-color quantization and packing. |
+| 4. Command-line image application | The core Phase 1 workflow is implemented and has been used on the panel. Both the display and hardware-free preview commands support dithering selection. |
 
-Phase 1 remains in progress: `inkhibit-display-test` displays a generated
-pattern, while the `inkhibit-display painting.jpg` image command in the
-definition of done is still to be implemented.
+The core Phase 1 deliverable works: `inkhibit-display painting.jpg` converts
+an image, refreshes the panel once, and puts it to sleep. The final Pi check of
+JPEG EXIF orientation is tracked below.
 
 ### Validation checkpoint
 
 - The maintainer built the hardware targets on the Pi and confirmed the
   six-color bars and upper-left L marker on the actual panel, then reported the
   setup working after the chip-select correction.
-- All **76 CTest cases pass** on the development machine, with the updated suite
-  also reported passing on the Pi. Automated tests use fake hardware and
-  simulated clocks; physical validation is a separate manual operation.
+- All **157 CTest cases pass** on the development machine, including eight EXIF
+  regression cases, one of which checks preview output end to end. Automated
+  hardware tests use fakes and simulated clocks; physical validation is separate.
+- The maintainer reported **131 automated cases passing on the Pi** during the
+  dithering increment, generated previews with both methods, and verified
+  dithered image output on the panel. The expanded 157-case Pi run and a physical
+  check with a known non-normal JPEG EXIF orientation are still to be confirmed.
 - The checked C adapter, model-specific panel driver, and C++ wrapper are tested
   together. The unchecked vendor branch and normal C++ sources have additional
   compile-only checks.
@@ -123,22 +128,34 @@ definition of done is still to be implemented.
   `native_y = landscape_x`, packed in native row-major order with the first
   pixel in the high nibble.
 
+### Implemented image processing decisions
+
+- The file loader checks the reported file size against a 64,000,000-byte limit.
+  Before full decode, the loader checks for at most 8,192 pixels on either axis
+  and at most 33,000,000 pixels in total.
+- JPEG EXIF correction handles all eight orientations in either byte order
+  before resizing. The decoder reads the main image's orientation within the
+  EXIF segment and keeps the stored pixel order if the tag is absent or unusable.
+- Images are downscaled with nearest-neighbor sampling as needed and centered
+  on a white 600 × 400 canvas without stretching or upscaling. Transparent PNG
+  pixels are composited over white. Crop-to-fill is a possible later option.
+- Nearest-color conversion and Floyd–Steinberg dithering share the same
+  six-color palette. Floyd–Steinberg is the CLI default and uses two rolling
+  rows of RGB error values.
+- The reusable framebuffer module packs the landscape canvas into the driver's
+  400 × 600 native layout: two pixels per byte, high nibble first, totaling
+  120,000 bytes. `inkhibit-preview` expands this same packed buffer to a binary
+  P6 PPM using RGB approximations of the panel colors.
+
 ### Next implementation increment
 
-1. Extract landscape-to-native coordinate mapping and pixel packing from
-   `src/display_test.cpp` into a reusable, hardware-independent module.
-2. Test all corners, an asymmetric orientation marker, high/low nibble order,
-   all six color codes, and the exact framebuffer size on the PC.
-3. Select a lightweight JPG/PNG decoder and resizing approach, with explicit
-   dimension and decoded-memory limits for the 512 MB Pi.
-4. Add decoding, aspect-ratio-preserving resizing/cropping, and nearest-color
-   quantization, followed by Floyd–Steinberg dithering and preview output.
-5. Connect the image pipeline to `Display` through the image CLI in Milestone 4.
+Rebuild and run the full suite on the Pi using the [README instructions](../README.md#build-and-test-on-the-raspberry-pi).
+Preview a JPEG with a known non-normal EXIF orientation, then display it once
+after the cooldown and verify that it matches the preview's orientation.
 
-Proposed image defaults to confirm during Milestone 3: center-crop to fill a
-600 × 400 landscape canvas, composite transparent PNG pixels onto white, and
-normalize JPEG EXIF orientation before resizing. These are planned processing
-policies, not implemented features.
+After that check, add a cancellable cooldown wait to the display CLI so a user
+can request one update without manually retrying. Keep the existing 180-second
+guard and process lock. Web gallery integration remains a later phase.
 
 ## Phase 1 milestones
 
@@ -175,7 +192,8 @@ Create a hardware-independent pipeline that:
 
 1. Loads ordinary JPG and PNG files.
 2. Validates dimensions and file integrity.
-3. Resizes and crops images to a 600 × 400 landscape canvas.
+3. Normalizes JPEG EXIF orientation and fits images inside a 600 × 400 landscape
+   canvas, preserving aspect ratio.
 4. Converts colors to the supported six-color palette.
 5. Supports nearest-color quantization.
 6. Implements Floyd–Steinberg dithering.
@@ -188,24 +206,18 @@ Image processing must be testable on Arch Linux without physical hardware.
 
 ### Milestone 4: Command-line application
 
-Basic interface:
+Implemented interfaces (from the repository root after building):
 
 ```sh
-./inkhibit-display painting.jpg
+sudo ./build/inkhibit-display painting.jpg
+./build-tests/inkhibit-preview painting.jpg preview.ppm
 ```
 
-Eventually support:
-
-- `--preview`: save a simulated e-ink preview without touching the display.
-- `--dither`: select the dithering method.
-- `--fit`: choose cropping or aspect-ratio-preserving fitting.
-- `--display`: explicitly send processed artwork to the connected display.
-
-Exact option syntax and interactions remain to be defined. Preserve the basic
-one-image command required by the definition of done.
-
-Handle missing files, invalid formats, incorrect arguments, and hardware errors
-gracefully.
+Both commands accept `--dither nearest` or `--dither floyd-steinberg` before the
+image path. The display command requires the Pi hardware build; the preview
+command also builds without hardware support. See the [README examples](../README.md#display-an-image-or-save-a-preview).
+Preserve the basic one-image display command when adding options such as
+crop-to-fill or automatic cooldown waiting.
 
 ## Hardware safety
 
@@ -243,7 +255,7 @@ gracefully.
 Phase 1 is complete when:
 
 ```sh
-./inkhibit-display painting.jpg
+sudo ./build/inkhibit-display painting.jpg
 ```
 
 automatically converts an ordinary photograph into a compatible framebuffer,
@@ -387,5 +399,5 @@ physical refreshes, with appropriate sleep and cleanup.
 
 The next steps then were to fix GPIO linkage and the unchecked-build typo, add a
 single-refresh validation executable, and validate the lifecycle on the Pi.
-Those steps are now superseded by the image-processing increment in
+Those steps are now superseded by the status in
 [Current progress](#current-progress).
