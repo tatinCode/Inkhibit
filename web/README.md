@@ -8,6 +8,10 @@ python -m http.server 8080 --bind 127.0.0.1 --directory web
 
 Open <http://127.0.0.1:8080>. No npm install or frontend build is needed.
 
+After a CMake build, `inkhibit-server` can serve the same files. It is
+reachable from other devices on your network; see
+[Serve the web gallery](../README.md#serve-the-web-gallery).
+
 ## Try the gallery
 
 1. Enter any nonempty username and password on the demo login screen.

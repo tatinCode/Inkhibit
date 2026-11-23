@@ -418,13 +418,17 @@ struct ServerProcess {
     int port;
 };
 
-// Starts the executable on a free port and waits until it answers.
-ServerProcess start_server_process(const fs::path& web_root, const fs::path& log)
+// Starts the executable on a free port and waits until it answers on loopback.
+ServerProcess start_server_process(const fs::path& web_root, const fs::path& log,
+    const std::vector<std::string>& extra_arguments)
 {
     for (int attempt = 0; attempt < 5; ++attempt) {
         const int port = free_port();
-        auto child = std::make_unique<Child>(std::vector<std::string>{
-            "--port", std::to_string(port), "--web-root", web_root.string()}, log);
+        std::vector<std::string> arguments{
+            "--port", std::to_string(port), "--web-root", web_root.string()};
+        arguments.insert(arguments.end(),
+            extra_arguments.begin(), extra_arguments.end());
+        auto child = std::make_unique<Child>(arguments, log);
 
         const auto deadline = std::chrono::steady_clock::now() + 5s;
         for (;;) {
@@ -585,7 +589,10 @@ void test_cli_help()
     require_exit(result, 0);
     REQUIRE(contains(result.output, "Usage: inkhibit-server"));
     REQUIRE(contains(result.output, "--web-root"));
-    REQUIRE(contains(result.output, "Defaults: --bind 127.0.0.1 --port 8080"));
+    REQUIRE(contains(result.output,
+        "Defaults: --bind 0.0.0.0 --port 8080 --web-root web"));
+    REQUIRE(contains(result.output,
+        "Use --bind 127.0.0.1 to accept connections from this machine only."));
 }
 
 void test_cli_usage()
@@ -630,13 +637,39 @@ void test_cli_port_in_use()
 {
     Site site;
     RunningServer owner(site.web);
-    const auto result = run_cli(site.directory,
-        {"--port", std::to_string(owner.port), "--web-root", site.web.string()});
-    require_exit(result, 1);
-    REQUIRE(contains(result.output,
-        "inkhibit-server: Could not listen on 127.0.0.1:"
-        + std::to_string(owner.port)));
+    const auto port = std::to_string(owner.port);
+
+    // Both the loopback address and the all-interfaces default conflict with
+    // a server already listening on 127.0.0.1.
+    const auto loopback_result = run_cli(site.directory,
+        {"--bind", "127.0.0.1", "--port", port, "--web-root", site.web.string()});
+    require_exit(loopback_result, 1);
+    REQUIRE(contains(loopback_result.output,
+        "inkhibit-server: Could not listen on 127.0.0.1:" + port + "\n"));
+
+    const auto default_result = run_cli(site.directory,
+        {"--port", port, "--web-root", site.web.string()});
+    require_exit(default_result, 1);
+    REQUIRE(contains(default_result.output,
+        "inkhibit-server: Could not listen on 0.0.0.0:" + port + "\n"));
+
     require_status(owner.port, "/api/health", 200);
+}
+
+// Sends signal to a running server and checks its clean exit and log.
+std::string stop_server_process(ServerProcess& process, const fs::path& log,
+    int signal)
+{
+    REQUIRE(::kill(process.child->pid(), signal) == 0);
+    const int code = process.child->wait_for_exit();
+    const auto output = read_file(log);
+    if (code != 128 + signal) {
+        throw std::runtime_error("Expected exit " + std::to_string(128 + signal)
+            + ", got " + std::to_string(code) + ": " + output);
+    }
+    REQUIRE(contains(output, "Press Ctrl+C to stop.\n"));
+    REQUIRE(contains(output, "Server stopped.\n"));
+    return output;
 }
 
 void test_cli_signals()
@@ -644,20 +677,72 @@ void test_cli_signals()
     Site site;
     const auto log = site.directory.path / "server.log";
     for (const int signal : {SIGINT, SIGTERM}) {
-        auto process = start_server_process(site.web, log);
+        auto process = start_server_process(site.web, log, {"--bind", "127.0.0.1"});
         require_file(process.port, "/app.js", app_js, "text/javascript");
 
-        REQUIRE(::kill(process.child->pid(), signal) == 0);
-        const int code = process.child->wait_for_exit();
-        const auto output = read_file(log);
-        if (code != 128 + signal) {
-            throw std::runtime_error("Expected exit " + std::to_string(128 + signal)
-                + ", got " + std::to_string(code) + ": " + output);
-        }
-        REQUIRE(contains(output, "Serving " + site.web.string()
-            + " at http://127.0.0.1:" + std::to_string(process.port) + "/"));
-        REQUIRE(contains(output, "Server stopped."));
+        const auto output = stop_server_process(process, log, signal);
+        const auto port = std::to_string(process.port);
+        REQUIRE(contains(output, "Serving " + site.web.string() + " on port "
+            + port + " at http://127.0.0.1:" + port + "/\n"));
     }
+}
+
+// The mDNS name the server should print, built by the same rule.
+std::string expected_host_url(int port)
+{
+    char host[256] = {};
+    REQUIRE(::gethostname(host, sizeof host - 1) == 0);
+    std::string name = host;
+    REQUIRE(!name.empty());
+    if (name.find('.') == std::string::npos) {
+        name += ".local";
+    }
+    return "http://" + name + ":" + std::to_string(port) + "/";
+}
+
+void test_cli_default_bind()
+{
+    Site site;
+    const auto log = site.directory.path / "server.log";
+    // No --bind: the default listens on every interface, including loopback.
+    auto process = start_server_process(site.web, log, {});
+    require_file(process.port, "/app.js", app_js, "text/javascript");
+    const auto output = stop_server_process(process, log, SIGTERM);
+
+    const auto port = std::to_string(process.port);
+    const std::string header = "Serving " + site.web.string() + " on port "
+        + port + " (all network interfaces):\n";
+    const auto start = output.find(header);
+    REQUIRE(start != std::string::npos);
+    const auto end = output.find("Press Ctrl+C to stop.\n", start);
+    REQUIRE(end != std::string::npos);
+
+    // Each line between the header and the prompt is one indented URL.
+    std::vector<std::string> urls;
+    auto position = start + header.size();
+    while (position < end) {
+        const auto newline = output.find('\n', position);
+        REQUIRE(newline != std::string::npos && newline < end);
+        const auto line = output.substr(position, newline - position);
+        REQUIRE(line.compare(0, 9, "  http://") == 0);
+        const std::string suffix = ":" + port + "/";
+        REQUIRE(line.size() > 9 + suffix.size());
+        REQUIRE(line.compare(line.size() - suffix.size(), suffix.size(), suffix) == 0);
+        urls.push_back(line.substr(2));
+        position = newline + 1;
+    }
+
+    // Hostname first, loopback last, with any interface addresses in between.
+    REQUIRE(urls.size() >= 2);
+    REQUIRE(urls.front() == expected_host_url(process.port));
+    REQUIRE(urls.back() == "http://127.0.0.1:" + port + "/");
+    for (std::size_t i = 1; i + 1 < urls.size(); ++i) {
+        REQUIRE(urls[i] != urls.back());
+        in_addr parsed{};
+        const auto address = urls[i].substr(7, urls[i].size() - 7 - (port.size() + 2));
+        REQUIRE(::inet_pton(AF_INET, address.c_str(), &parsed) == 1);
+    }
+    REQUIRE(!contains(output, "0.0.0.0"));
 }
 
 } // namespace
@@ -683,7 +768,8 @@ int main(int argc, char** argv)
             {"cli_usage", test_cli_usage},
             {"cli_invalid_root", test_cli_invalid_root},
             {"cli_port_in_use", test_cli_port_in_use},
-            {"cli_signals", test_cli_signals}
+            {"cli_signals", test_cli_signals},
+            {"cli_default_bind", test_cli_default_bind}
         };
         for (const auto& test : tests) {
             if (name == test.first) {

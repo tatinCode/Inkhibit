@@ -15,13 +15,15 @@ Spectra 6**, using the model-specific `EPD_4in0e` driver.
   180-second cooldown. A process lock prevents concurrent updates.
 - `inkhibit-preview` saves a 600 × 400 PPM preview from the same framebuffer
   without accessing the panel.
+- `inkhibit-server` serves the browser gallery prototype over HTTP, with a
+  `/api/health` endpoint. It does not access the panel yet.
 - The maintainer has verified the test pattern and dithered image display on
   the physical panel, including automatic cooldown waiting and cancellation.
-  All **166 CTest cases pass** on the development machine and Raspberry Pi.
+  All **181 CTest cases pass** on the development machine.
 
-A browser-only gallery prototype is available in [web/](web/README.md). Its
-gallery and previews run locally in the browser; integration with the Pi backend
-is a later phase.
+The gallery prototype in [web/](web/README.md) still keeps its artwork and
+previews in the browser. Sending an image from the gallery to the frame is the
+next step.
 
 See [the project plan](docs/PLAN.md#current-progress) for milestone status and
 the next implementation steps.
@@ -60,6 +62,9 @@ Coverage includes:
 - JPEG and PNG decoding, transparency, all eight JPEG EXIF orientations,
   canvas fitting, six-color quantization, and native framebuffer packing.
 - Floyd–Steinberg dithering, PPM preview output, and preview CLI behavior.
+- HTTP server health and static files, refusal of path traversal and symlink
+  escapes, port conflicts and quick restarts, and server CLI options, startup
+  URLs, and signal shutdown.
 
 The unchecked vendor branch and the C++ sources also receive compile-only
 checks. CTest uses fake hardware even when the hardware targets are enabled;
@@ -98,7 +103,8 @@ ctest --test-dir build --output-on-failure
 ```
 
 Two build jobs suit the Zero 2 W's 512 MB RAM; use `--parallel 1` if memory is
-tight. Set `-DBUILD_TESTING=OFF` to omit test targets and compile checks.
+tight. Files that include the large `httplib.h` header need the most memory; if
+the build is killed or the Pi stops responding, rerun it with `--parallel 1`. Set `-DBUILD_TESTING=OFF` to omit test targets and compile checks.
 
 `cmake -S . -B build` alone only configures the project. Hardware support defaults
 to OFF in a fresh build directory; subsequent configurations reuse cached
@@ -174,6 +180,56 @@ On the Pi, the hardware-enabled build also provides `./build/inkhibit-preview`.
 Previewing needs no `sudo` and does not start a cooldown. The binary P6 PPM
 uses RGB approximations of the six panel colors, so its colors may look
 different from the panel's.
+
+## Serve the web gallery
+
+`inkhibit-server` serves the files in `web/` and answers `GET /api/health`
+with `{"status":"ok"}`. It doesn't access the panel, so it needs no `sudo`.
+From the repository root:
+
+```sh
+./build/inkhibit-server          # on the Pi
+./build-tests/inkhibit-server    # on the development machine
+```
+
+On startup it lists addresses you can open, for example:
+
+```text
+Serving web on port 8080 (all network interfaces):
+  http://bippy.local:8080/
+  http://192.168.1.42:8080/
+  http://127.0.0.1:8080/
+Press Ctrl+C to stop.
+```
+
+Open the `.local` hostname from another device on the same network. Some
+Android devices and some routers don't support `.local` names; use the
+listed IP address instead. Press **Ctrl+C**, or send SIGTERM, to stop the
+server.
+
+Options:
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--bind ADDRESS` | `0.0.0.0` | Address to listen on. `0.0.0.0` accepts connections on every network interface. |
+| `--port PORT` | `8080` | TCP port, 1–65535. |
+| `--web-root DIR` | `web` | Directory to serve. Relative paths are resolved from the current directory. |
+
+**The server is reachable by every device on your network and has no login
+yet.** Run it only on a network you trust, or use `--bind 127.0.0.1` to accept
+connections from the Pi itself only. Files are served only from inside the web
+root: `..` paths and symlinks that point outside it are refused. A second
+server cannot start on a port that is already in use.
+
+The server stops when the SSH session that started it ends. Until a systemd
+service is added, run it inside `tmux` on the Pi to keep it running after you
+disconnect:
+
+```sh
+tmux new -s inkhibit
+./build/inkhibit-server
+# Detach with Ctrl+B, then D. Reattach later with: tmux attach -t inkhibit
+```
 
 ## GPIO ownership and persistent state
 

@@ -244,6 +244,7 @@ set(server_cases
     health static_files frontend not_found traversal symlink_escape
     invalid_root duplicate_port rebind
     cli_help cli_usage cli_invalid_root cli_port_in_use cli_signals
+    cli_default_bind
 )
 foreach(case IN LISTS server_cases)
     add_test(NAME "server.${case}" COMMAND inkhibit_server_tests

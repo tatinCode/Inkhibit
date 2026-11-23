@@ -194,14 +194,8 @@ int main(int argc, char** argv) {
             }
         } else {
             std::cout << " at http://" << options.bind << ':' << options.port << "/\n";
-        }        
+        }
         std::cout << "Press Ctrl+C to stop.\n" << std::flush;
-
-        //std::cout
-            //<< "Serving " << options.web_root << " at http://"
-            //<< options.bind << ':' << options.port << "/\n"
-            //<< "Press Ctrl+C to stop.\n"
-            //<< std::flush;
 
         bool listened = false;
         std::exception_ptr failure;
