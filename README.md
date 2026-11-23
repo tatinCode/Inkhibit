@@ -16,7 +16,8 @@ Spectra 6**, using the model-specific `EPD_4in0e` driver.
 - `inkhibit-preview` saves a 600 × 400 PPM preview from the same framebuffer
   without accessing the panel.
 - The maintainer has verified the test pattern and dithered image display on
-  the physical panel. All **157 CTest cases pass** on the development machine.
+  the physical panel, including automatic cooldown waiting and cancellation.
+  All **166 CTest cases pass** on the development machine and Raspberry Pi.
 
 A browser-only gallery prototype is available in [web/](web/README.md). Its
 gallery and previews run locally in the browser; integration with the Pi backend
@@ -54,6 +55,8 @@ Coverage includes:
   sequencing, deep sleep, and one-shot wrapper behavior.
 - Process locking, persistent cooldowns, interrupted sessions, boot changes,
   malformed and negative timestamps, and invalid state-file paths.
+- Automatic cooldown waiting, retry with a fresh display session, and
+  cancellation without refreshing the panel.
 - JPEG and PNG decoding, transparency, all eight JPEG EXIF orientations,
   canvas fitting, six-color quantization, and native framebuffer packing.
 - Floyd–Steinberg dithering, PPM preview output, and preview CLI behavior.
@@ -129,15 +132,16 @@ program prints:
 Update complete. Panel slept and resources were released.
 ```
 
-An immediate second invocation should report `Display cooldown active` and exit
-without updating the panel. Allow at least **180 seconds after successful
-shutdown** before another refresh. During an update, SIGINT/SIGTERM requests
-allow the panel operation and cleanup to finish before the program exits.
+An immediate second invocation of `inkhibit-display-test` should report
+`Display cooldown active` and exit without updating the panel. Allow at least
+**180 seconds after successful shutdown** before another refresh. During an
+update, SIGINT/SIGTERM requests allow the panel operation and cleanup to finish
+before the program exits.
 
 ## Display an image or save a preview
 
 After a hardware-enabled build on the Pi, display a JPEG or PNG from the
-repository root. Run one of these commands when the cooldown permits:
+repository root. Run one of these commands:
 
 ```sh
 # Floyd–Steinberg dithering is the default.
@@ -146,6 +150,11 @@ sudo ./build/inkhibit-display painting.jpg
 # Use nearest-color conversion instead.
 sudo ./build/inkhibit-display --dither nearest painting.png
 ```
+
+If a cooldown is active, `inkhibit-display` reports the remaining time, waits
+automatically, and checks again before refreshing. Press **Ctrl+C** while
+waiting to cancel the pending update. If a refresh has already started, the
+program lets the panel operation and cleanup finish before exiting.
 
 Both commands fit the image inside the 600 × 400 landscape canvas, preserving
 its aspect ratio without upscaling. Margins are white, and transparent PNG
@@ -192,13 +201,14 @@ Sessions use `/var/lib/inkhibit/` by default:
   persisted through an atomic file replacement.
 
 An unfinished session, invalid state record, or changed boot ID records a
-**180-second recovery cooldown** and exits before hardware initialization.
+**180-second recovery cooldown** before any hardware initialization.
 Subsequent attempts observe the same deadline rather than restarting it. State
 timestamps are parsed strictly with `std::from_chars`, including rejection of
 negative values. Oversized or nonregular state files are rejected before
 hardware initialization.
 
 With no saved state, the guard rejects updates until system uptime reaches
-180 seconds. If the command reports a cooldown, retry after the reported wait.
-Preserve the state directory between runs so the cooldown remains effective
-across separate invocations.
+180 seconds. The image command waits automatically; if the pattern test
+reports a cooldown, retry it after the reported wait. Preserve the state
+directory between runs so the cooldown remains effective across separate
+invocations.

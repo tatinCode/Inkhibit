@@ -78,13 +78,14 @@ JPEG EXIF orientation is tracked below.
 - The maintainer built the hardware targets on the Pi and confirmed the
   six-color bars and upper-left L marker on the actual panel, then reported the
   setup working after the chip-select correction.
-- All **157 CTest cases pass** on the development machine, including eight EXIF
-  regression cases, one of which checks preview output end to end. Automated
-  hardware tests use fakes and simulated clocks; physical validation is separate.
-- The maintainer reported **131 automated cases passing on the Pi** during the
-  dithering increment, generated previews with both methods, and verified
-  dithered image output on the panel. The expanded 157-case Pi run and a physical
-  check with a known non-normal JPEG EXIF orientation are still to be confirmed.
+- All **166 CTest cases pass** on the development machine and, as reported by
+  the maintainer, on the Raspberry Pi. The suite includes eight EXIF and nine
+  cooldown regression cases. Automated hardware tests use fakes and simulated
+  clocks; physical validation is separate.
+- The maintainer generated previews with both methods and verified dithered
+  image output, automatic cooldown waiting, and Ctrl+C cancellation on the Pi.
+  A physical check with a JPEG carrying a known non-normal EXIF orientation is
+  still to be confirmed.
 - The checked C adapter, model-specific panel driver, and C++ wrapper are tested
   together. The unchecked vendor branch and normal C++ sources have additional
   compile-only checks.
@@ -120,6 +121,10 @@ JPEG EXIF orientation is tracked below.
   boot ID records a fresh 180-second recovery cooldown on the next invocation.
   Repeated attempts do not extend that recovery deadline. With no state file,
   the first update requires at least 180 seconds of system uptime.
+- `inkhibit-display` reports the remaining cooldown and waits without holding
+  the display lock. It then opens a fresh session and rechecks the deadline.
+  Ctrl+C cancels a pending update. The pattern-test command still exits when a
+  cooldown is active.
 - State deadlines use `CLOCK_BOOTTIME` and the Linux boot ID. Strict
   `std::from_chars` parsing rejects negative, overflowing, and partially numeric
   timestamps. Oversized or nonregular state files are rejected before hardware
@@ -149,13 +154,13 @@ JPEG EXIF orientation is tracked below.
 
 ### Next implementation increment
 
-Rebuild and run the full suite on the Pi using the [README instructions](../README.md#build-and-test-on-the-raspberry-pi).
-Preview a JPEG with a known non-normal EXIF orientation, then display it once
-after the cooldown and verify that it matches the preview's orientation.
+For the remaining Pi check, preview a JPEG with a known non-normal EXIF
+orientation, then display it once and verify that it matches the preview's
+orientation.
 
-After that check, add a cancellable cooldown wait to the display CLI so a user
-can request one update without manually retrying. Keep the existing 180-second
-guard and process lock. Web gallery integration remains a later phase.
+The next phase starts by serving the browser gallery from a local C++ backend.
+Then add an explicit action to send one image to the frame through the existing
+image pipeline and display guard.
 
 ## Phase 1 milestones
 
@@ -217,7 +222,7 @@ Both commands accept `--dither nearest` or `--dither floyd-steinberg` before the
 image path. The display command requires the Pi hardware build; the preview
 command also builds without hardware support. See the [README examples](../README.md#display-an-image-or-save-a-preview).
 Preserve the basic one-image display command when adding options such as
-crop-to-fill or automatic cooldown waiting.
+crop-to-fill.
 
 ## Hardware safety
 
