@@ -7,8 +7,13 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <vector>
 
-
+#include <arpa/inet.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <ifaddrs.h>
+#include <unistd.h>
 #include <pthread.h>
 #include <signal.h>
 #include <time.h>
@@ -16,7 +21,7 @@
 namespace{
 
     struct Options {
-        std::string bind = "127.0.0.1";
+        std::string bind = "0.0.0.0";
         int port = 8080;
         std::string web_root = "web";
     };
@@ -26,7 +31,8 @@ namespace{
             << "Usage: inkhibit-server "
             << "[--bind ADDRESS] [--port PORT] [--web-root DIR]\n\n"
             << "Serves the Inkhibit gallery and API over HTTP.\n"
-            << "Defaults: --bind 127.0.0.1 --port 8080 --web-root web\n"
+            << "Defaults: --bind 0.0.0.0 --port 8080 --web-root web\n"
+            << "Use --bind 127.0.0.1 to accept connections from this machine only.\n"
             << "Press Ctrl+C to stop the server.\n";
     }
 
@@ -85,6 +91,45 @@ namespace{
 
     }   //end of parse_options
 
+    // Addresses a browser can use to reach a server bound to all interfaces.
+    std::vector<std::string> reachable_urls(int port) {
+        std::vector<std::string> urls;
+        const std::string suffix = ":" + std::to_string(port) + "/";
+
+        char host[256] = {};
+        if (gethostname(host, sizeof host - 1) == 0 && host[0] != '\0') {
+            std::string name = host;
+            // A bare name like "bippy" is announced by mDNS as "bippy.local".
+            if (name.find('.') == std::string::npos) {
+                name += ".local";
+            }
+            urls.push_back("http://" + name + suffix);
+        }
+
+        ifaddrs* interfaces = nullptr;
+        if (getifaddrs(&interfaces) == 0) {
+            for (const ifaddrs* entry = interfaces; entry; entry = entry->ifa_next) {
+                if (!entry->ifa_addr || entry->ifa_addr->sa_family != AF_INET
+                        || !(entry->ifa_flags & IFF_UP)
+                        || (entry->ifa_flags & IFF_LOOPBACK)) {
+                    continue;
+                }
+
+                const auto* ipv4 =
+                    reinterpret_cast<const sockaddr_in*>(entry->ifa_addr);
+                char address[INET_ADDRSTRLEN] = {};
+                if (inet_ntop(AF_INET, &ipv4->sin_addr, address, sizeof address)) {
+                    urls.push_back("http://" + std::string(address) + suffix);
+                }
+            }
+            freeifaddrs(interfaces);
+        }
+
+        urls.push_back("http://127.0.0.1" + suffix);
+        return urls;
+
+    }   //end of reachable_urls
+
 }   //end of namespace inkhibit
     //
 
@@ -131,20 +176,32 @@ int main(int argc, char** argv) {
                 const timespec interval{0, 100'000'000};
 
                 while (!finished) {
-                const int number = sigtimedwait(&signals, nullptr, &interval);
-                if (number > 0) {
-                received = number;
-                server.stop();
-                return;
-                }
+                    const int number = sigtimedwait(&signals, nullptr, &interval);
+                    if (number > 0) {
+                        received = number;
+                        server.stop();
+
+                        return;
+                    }
                 }
                 });
 
-        std::cout
-            << "Serving " << options.web_root << " at http://"
-            << options.bind << ':' << options.port << "/\n"
-            << "Press Ctrl+C to stop.\n"
-            << std::flush;
+        std::cout << "Serving " << options.web_root << " on port " << options.port;
+        if (options.bind == "0.0.0.0") {
+            std::cout << " (all network interfaces):\n";
+            for (const auto& url : reachable_urls(options.port)) {
+                std::cout << "  " << url << '\n';
+            }
+        } else {
+            std::cout << " at http://" << options.bind << ':' << options.port << "/\n";
+        }        
+        std::cout << "Press Ctrl+C to stop.\n" << std::flush;
+
+        //std::cout
+            //<< "Serving " << options.web_root << " at http://"
+            //<< options.bind << ':' << options.port << "/\n"
+            //<< "Press Ctrl+C to stop.\n"
+            //<< std::flush;
 
         bool listened = false;
         std::exception_ptr failure;
