@@ -42,7 +42,7 @@ Official model-specific demo archive:
 - Waveshare's existing C display driver.
 - Vendored stb_image v2.30 for JPEG and PNG decoding; native C++ for orientation,
   canvas fitting, dithering, and framebuffer packing.
-- cpp-httplib for the eventual HTTP server.
+- Vendored cpp-httplib v0.67.0 (header-only) for the HTTP server.
 - HTML, CSS, and vanilla JavaScript for the eventual frontend.
 - NetworkManager for eventual Wi-Fi provisioning.
 - Avahi/mDNS for eventual access through `inkhibit.local`.
@@ -50,15 +50,15 @@ Official model-specific demo archive:
 
 Avoid unnecessary dependencies, heavy frameworks, and microservices.
 
-## Current scope: Phase 1 — Display integration
+## Phase 1 scope — Display integration
 
 Create a standalone C++ program that displays ordinary JPG and PNG images on the
 Waveshare screen.
 
-Do not implement the HTTP server, Wi-Fi provisioning, or gallery interface in
-this phase. Progress incrementally through the milestones below. The separate
-browser-only prototype in `web/` is UI groundwork; backend integration belongs
-to a later phase.
+Phase 1 is complete. The current phase connects the browser gallery in `web/`
+to the frame through a local C++ HTTP server, in the small steps listed under
+[Phase 2](#phase-2--web-gallery-integration). Wi-Fi provisioning remains a
+later phase.
 
 ## Current progress
 
@@ -70,22 +70,45 @@ to a later phase.
 | 4. Command-line image application | The core Phase 1 workflow is implemented and has been used on the panel. Both the display and hardware-free preview commands support dithering selection. |
 
 The core Phase 1 deliverable works: `inkhibit-display painting.jpg` converts
-an image, refreshes the panel once, and puts it to sleep. The final Pi check of
-JPEG EXIF orientation is tracked below.
+an image, refreshes the panel once, and puts it to sleep. Phase 1 is complete.
+
+### Phase 2 — Web gallery integration
+
+| Step | Status |
+| --- | --- |
+| 1. Serve the gallery (`inkhibit-server`) | Implemented; all tests pass on the development machine and the Pi. Opening the gallery from another device is pending. |
+| 2. Send an image to the frame (`POST /api/display`) | Next. |
+| 3. Report display status (`GET /api/status`) and enable the gallery's Display button | Planned. |
+| 4. Server-side gallery storage, authentication, systemd service | Later. |
+
+Step 1 decisions:
+
+- Server code lives in `include/inkhibit/server/` and `src/server/`, separate
+  from the served `web/` directory, so backend files can never be downloaded.
+- `configure_server()` mounts the web root and registers `/api/health` on a
+  caller-owned `httplib::Server`, so tests and `main()` share the same setup.
+- Sockets use `SO_REUSEADDR` instead of cpp-httplib's default `SO_REUSEPORT`:
+  a restart can reuse the port immediately, but a second server cannot listen
+  on the same port.
+- The server binds to `0.0.0.0:8080` by default and prints the mDNS hostname,
+  each IPv4 address, and `127.0.0.1`. It has no authentication yet;
+  `--bind 127.0.0.1` restricts it to the local machine.
+- SIGINT and SIGTERM are blocked in every thread and received by one waiter
+  thread with `sigtimedwait`, which stops the server cleanly.
 
 ### Validation checkpoint
 
 - The maintainer built the hardware targets on the Pi and confirmed the
   six-color bars and upper-left L marker on the actual panel, then reported the
   setup working after the chip-select correction.
-- All **166 CTest cases pass** on the development machine and, as reported by
-  the maintainer, on the Raspberry Pi. The suite includes eight EXIF and nine
-  cooldown regression cases. Automated hardware tests use fakes and simulated
-  clocks; physical validation is separate.
+- All **181 CTest cases pass** on the development machine and, as reported by
+  the maintainer, on the Raspberry Pi. The suite includes eight EXIF, nine
+  cooldown, and fifteen server cases. Automated hardware tests
+  use fakes and simulated clocks; physical validation is separate.
 - The maintainer generated previews with both methods and verified dithered
   image output, automatic cooldown waiting, and Ctrl+C cancellation on the Pi.
-  A physical check with a JPEG carrying a known non-normal EXIF orientation is
-  still to be confirmed.
+  The maintainer also displayed JPEGs with non-normal EXIF orientation and
+  confirmed that portrait photos appear upright, matching their previews.
 - The checked C adapter, model-specific panel driver, and C++ wrapper are tested
   together. The unchecked vendor branch and normal C++ sources have additional
   compile-only checks.
@@ -154,13 +177,18 @@ JPEG EXIF orientation is tracked below.
 
 ### Next implementation increment
 
-For the remaining Pi check, preview a JPEG with a known non-normal EXIF
-orientation, then display it once and verify that it matches the preview's
-orientation.
+Start `inkhibit-server` on the Pi and open the gallery from another device.
 
-The next phase starts by serving the browser gallery from a local C++ backend.
-Then add an explicit action to send one image to the frame through the existing
-image pipeline and display guard.
+Then add `POST /api/display`: the browser sends one image, and the server
+displays it through the existing image pipeline and display guard. Decide
+first:
+
+- Whether the browser sends its processed 600 × 400 image or the original file.
+- Whether the request returns `202 Accepted` while a worker thread waits for the
+  cooldown and refreshes the panel.
+- Whether a new request replaces a pending one or is rejected with `409`.
+- Whether the server runs as root or as a user in the `gpio` and `spi` groups
+  with write access to `/var/lib/inkhibit/`.
 
 ## Phase 1 milestones
 

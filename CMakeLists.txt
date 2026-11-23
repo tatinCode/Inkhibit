@@ -81,6 +81,63 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 ##
+# cpp-httplib (vendored, header only)
+find_package(Threads REQUIRED)
+
+
+add_library(inkhibit_httplib INTERFACE)
+
+target_include_directories(inkhibit_httplib SYSTEM INTERFACE
+    "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpp-httplib"
+)
+
+target_link_libraries(inkhibit_httplib INTERFACE
+    Threads::Threads
+)
+
+##
+# server 
+add_library(inkhibit_server STATIC
+    src/server/server.cpp
+)
+
+target_compile_features(inkhibit_server PUBLIC cxx_std_17)
+
+set_target_properties(inkhibit_server PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+target_include_directories(inkhibit_server PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+
+target_link_libraries(inkhibit_server PUBLIC
+    inkhibit_httplib
+)
+
+add_executable(inkhibit-server
+    src/server/main.cpp
+)
+
+target_link_libraries(inkhibit-server PRIVATE
+    inkhibit_server
+)
+
+set_target_properties(inkhibit-server PROPERTIES
+    CXX_EXTENSIONS OFF
+)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_server PRIVATE
+        -Wall -Wextra -Wpedantic
+    )
+
+    target_compile_options(inkhibit-server PRIVATE
+        -Wall -Wextra -Wpedantic
+    )
+endif()
+
+##
 #
 if(INKHIBIT_BUILD_HARDWARE)
     find_path(LGPIO_INCLUDE_DIR NAMES lgpio.h REQUIRED)
