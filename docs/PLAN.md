@@ -76,7 +76,7 @@ an image, refreshes the panel once, and puts it to sleep. Phase 1 is complete.
 
 | Step | Status |
 | --- | --- |
-| 1. Serve the gallery (`inkhibit-server`) | Implemented; all tests pass on the development machine and the Pi. Opening the gallery from another device is pending. |
+| 1. Serve the gallery (`inkhibit-server`) | Done. All tests pass on the development machine and the Pi, and the gallery opens from other devices on the network. |
 | 2. Send an image to the frame (`POST /api/display`) | Next. |
 | 3. Report display status (`GET /api/status`) and enable the gallery's Display button | Planned. |
 | 4. Server-side gallery storage, authentication, systemd service | Later. |
@@ -177,9 +177,7 @@ Step 1 decisions:
 
 ### Next implementation increment
 
-Start `inkhibit-server` on the Pi and open the gallery from another device.
-
-Then add `POST /api/display`: the browser sends one image, and the server
+Add `POST /api/display`: the browser sends one image, and the server
 displays it through the existing image pipeline and display guard. Decide
 first:
 
