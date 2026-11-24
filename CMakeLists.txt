@@ -12,6 +12,7 @@ set(WAVESHARE_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/third_party/waveshare/lib"
 )
 
+
 ##
 #framebuffer
 add_library(inkhibit_framebuffer STATIC
@@ -33,6 +34,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wall -Wextra -Wpedantic
     )
 endif()
+
 
 ##
 #image
@@ -59,6 +61,25 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wall -Wextra -Wpedantic
     )
 endif()
+
+
+##
+# album
+add_library(inkhibit_album STATIC
+    src/album/image.cpp
+)
+
+target_compile_features(inkhibit_album PUBLIC cxx_std_17)
+set_target_properties(inkhibit_album PROPERTIES CXX_EXTENSIONS OFF)
+target_include_directories(inkhibit_album PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+)
+target_link_libraries(inkhibit_album PRIVATE inkhibit_image)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_album PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 
 ##
 # preview image
@@ -136,6 +157,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wall -Wextra -Wpedantic
     )
 endif()
+
 
 ##
 #
@@ -255,6 +277,7 @@ if(INKHIBIT_BUILD_HARDWARE)
         )
     endif()
 endif()
+
 
 include(CTest)
 
