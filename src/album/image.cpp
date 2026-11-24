@@ -26,8 +26,7 @@ namespace inkhibit::album {
 
     } // namespace
 
-    void validate_png(const std::vector<std::uint8_t>& bytes)
-    {
+    void validate_png(const std::vector<std::uint8_t>& bytes) {
         if (bytes.size() > max_png_bytes) {
             throw std::invalid_argument("Album image exceeds 2 MiB");
         }

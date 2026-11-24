@@ -63,18 +63,24 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 
+find_package(Threads REQUIRED)
+
+
 ##
 # album
 add_library(inkhibit_album STATIC
     src/album/image.cpp
+    src/album/store.cpp
 )
 
 target_compile_features(inkhibit_album PUBLIC cxx_std_17)
+
 set_target_properties(inkhibit_album PROPERTIES CXX_EXTENSIONS OFF)
+
 target_include_directories(inkhibit_album PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
-target_link_libraries(inkhibit_album PRIVATE inkhibit_image)
+target_link_libraries(inkhibit_album PRIVATE inkhibit_image Threads::Threads)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(inkhibit_album PRIVATE -Wall -Wextra -Wpedantic)
@@ -103,9 +109,6 @@ endif()
 
 ##
 # cpp-httplib (vendored, header only)
-find_package(Threads REQUIRED)
-
-
 add_library(inkhibit_httplib INTERFACE)
 
 target_include_directories(inkhibit_httplib SYSTEM INTERFACE
