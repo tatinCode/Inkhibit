@@ -48,7 +48,11 @@ namespace inkhibit::album {
         }
 
         // A valid-looking header isn't enough: the pixel data must decode too.
-        (void)image::decode_image_bytes(bytes.data(), bytes.size());
+        try {
+            (void)image::decode_image_bytes(bytes.data(), bytes.size());
+        } catch (const std::runtime_error&) {
+            throw std::invalid_argument("Album PNG pixel data could not be decoded");
+        }
     }
 
 } // namespace inkhibit::album

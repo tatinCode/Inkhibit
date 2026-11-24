@@ -77,9 +77,13 @@ an image, refreshes the panel once, and puts it to sleep. Phase 1 is complete.
 | Step | Status |
 | --- | --- |
 | 1. Serve the gallery (`inkhibit-server`) | Done. All tests pass on the development machine and the Pi, and the gallery opens from other devices on the network. |
-| 2. Send an image to the frame (`POST /api/display`) | Next. |
-| 3. Report display status (`GET /api/status`) and enable the gallery's Display button | Planned. |
-| 4. Server-side gallery storage, authentication, systemd service | Later. |
+| 2. Persistent album storage and add/list/remove API (`web-album`) | Implemented; storage tests pass on PC and Pi. New HTTP tests pass on PC; Pi HTTP validation pending. |
+| 3. Timed album rotation | Next: configurable elapsed interval, 30 minutes or longer. |
+| 4. Browser album controls, status, authentication, systemd service | Planned. |
+
+The main workflow is an album stored on the Pi that rotates without a browser
+remaining open, not a one-off `POST /api/display` action. An optional "Show now"
+action can be considered later.
 
 Step 1 decisions:
 
@@ -96,14 +100,35 @@ Step 1 decisions:
 - SIGINT and SIGTERM are blocked in every thread and received by one waiter
   thread with `sigtimedwait`, which stops the server cleanly.
 
+Album decisions:
+
+- `include/inkhibit/album/` and `src/album/` implement validation and disk storage.
+  Uploads are PNGs that decode to 600 × 400, limited to 2 MiB. Palette enforcement,
+  dithering, and display refresh are not part of storage.
+- `--album-root DIR` opts into `GET`/`POST /api/album` and
+  `DELETE /api/album/<id>`. Storage must be outside the served web root.
+  Files are saved unchanged under generated numeric IDs; list order is numeric
+  insertion order. JSON IDs are strings to preserve uint64 precision.
+- The counter survives deletion/restarts. Failed writes may leave gaps.
+  Temporary-file renames hide incomplete PNG writes, but are not a guarantee
+  against sudden power loss. One store instance owns a private directory;
+  multiple processes writing that directory are unsupported.
+- The CLI does not require loopback binding for album mode. The current API
+  checks `Host: 127.0.0.1:<port>`, so normal LAN-hostname album requests receive
+  403. This is not authentication; clients can supply the accepted Host header.
+  Use `--bind 127.0.0.1` while testing the unauthenticated API.
+- The gallery UI is not connected to this API. No rotation, per-image download
+  route, quotas, or authentication is implemented in this increment.
+
 ### Validation checkpoint
 
 - The maintainer built the hardware targets on the Pi and confirmed the
   six-color bars and upper-left L marker on the actual panel, then reported the
   setup working after the chip-select correction.
-- All **181 CTest cases pass** on the development machine and, as reported by
-  the maintainer, on the Raspberry Pi. The suite includes eight EXIF, nine
-  cooldown, and fifteen server cases. Automated hardware tests
+- All **203 CTest cases pass** on the development machine. The maintainer reported
+  the previous **194-case suite passing on the Raspberry Pi**. The nine new
+  album HTTP cases still need a Pi run. The suite includes eight EXIF, nine
+  cooldown, thirteen album-library, and twenty-four server cases. Automated hardware tests
   use fakes and simulated clocks; physical validation is separate.
 - The maintainer generated previews with both methods and verified dithered
   image output, automatic cooldown waiting, and Ctrl+C cancellation on the Pi.
@@ -177,16 +202,20 @@ Step 1 decisions:
 
 ### Next implementation increment
 
-Add `POST /api/display`: the browser sends one image, and the server
-displays it through the existing image pipeline and display guard. Decide
-first:
+Run the 203-case suite on the Pi and smoke-test the album API: upload two prepared
+PNGs, restart, verify listing order, delete one, and verify the other remains.
 
-- Whether the browser sends its processed 600 × 400 image or the original file.
-- Whether the request returns `202 Accepted` while a worker thread waits for the
-  cooldown and refreshes the panel.
-- Whether a new request replaces a pending one or is rejected with `409`.
-- Whether the server runs as root or as a user in the `gpio` and `spi` groups
-  with write access to `/var/lib/inkhibit/`.
+Then implement timed album rotation through the existing image pipeline and
+display guard. Intervals are elapsed durations, from 30 minutes to multiple
+hours, not fixed times of day. The proposed default is one hour; no maximum
+interval has been chosen. Persist the interval across restarts, never interrupt
+an active refresh, and keep the existing hardware cooldown as an independent
+safety constraint.
+
+Before rotation implementation, settle startup/resume behavior, empty-album and
+single-image behavior, how deletions affect the current image, and hardware/state
+directory permissions for a non-root service account. Authentication and browser
+integration remain later work; no unauthenticated public deployment is intended.
 
 ## Phase 1 milestones
 

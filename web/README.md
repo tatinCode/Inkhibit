@@ -12,6 +12,10 @@ After a CMake build, `inkhibit-server` can serve the same files. It is
 reachable from other devices on your network; see
 [Serve the web gallery](../README.md#serve-the-web-gallery).
 
+The optional [persistent album API](../README.md#persistent-album-api) is tested
+from the command line for now. This prototype still stores its gallery in the
+browser; it does not upload to the server album or control timed frame rotation.
+
 ## Try the gallery
 
 1. Enter any nonempty username and password on the demo login screen.

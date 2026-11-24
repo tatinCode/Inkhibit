@@ -263,6 +263,9 @@ set(server_cases
     invalid_root duplicate_port rebind
     cli_help cli_usage cli_invalid_root cli_port_in_use cli_signals
     cli_default_bind
+    album_disabled album_lifecycle album_invalid_uploads album_content_type
+    album_payload_limit album_host album_delete_ids album_private_root
+    album_storage_error
 )
 foreach(case IN LISTS server_cases)
     add_test(NAME "server.${case}" COMMAND inkhibit_server_tests

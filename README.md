@@ -16,14 +16,19 @@ Spectra 6**, using the model-specific `EPD_4in0e` driver.
 - `inkhibit-preview` saves a 600 × 400 PPM preview from the same framebuffer
   without accessing the panel.
 - `inkhibit-server` serves the browser gallery prototype over HTTP, with a
-  `/api/health` endpoint. It does not access the panel yet.
+  `/api/health` endpoint and an opt-in persistent album API. It does not access
+  the panel yet.
 - The maintainer has verified the test pattern and dithered image display on
   the physical panel, including automatic cooldown waiting and cancellation.
-  All **181 CTest cases pass** on the development machine and Raspberry Pi.
+  All **203 CTest cases pass** on the development machine. The maintainer
+  reported the previous **194-case suite passing on the Raspberry Pi**;
+  the new album HTTP tests still need a Pi run.
 
 The gallery prototype in [web/](web/README.md) still keeps its artwork and
-previews in the browser. Sending an image from the gallery to the frame is the
-next step.
+previews in the browser; it is not yet connected to the server album.
+The intended frame workflow is a persistent album that rotates on a
+configurable interval of 30 minutes or longer. Automatic rotation is not
+implemented yet.
 
 See [the project plan](docs/PLAN.md#current-progress) for milestone status and
 the next implementation steps.
@@ -65,6 +70,10 @@ Coverage includes:
 - HTTP server health and static files, refusal of path traversal and symlink
   escapes, port conflicts and quick restarts, and server CLI options, startup
   URLs, and signal shutdown.
+- Album PNG validation, persistent numeric ordering, deletion without ID reuse,
+  write failures, and concurrent additions. Real-server tests exercise album
+  uploads, listing across restarts, deletion, Host checks, storage-path
+  restrictions, and upload limits including chunked requests.
 
 The unchecked vendor branch and the C++ sources also receive compile-only
 checks. CTest uses fake hardware even when the hardware targets are enabled;
@@ -214,6 +223,7 @@ Options:
 | `--bind ADDRESS` | `0.0.0.0` | Address to listen on. `0.0.0.0` accepts connections on every network interface. |
 | `--port PORT` | `8080` | TCP port, 1–65535. |
 | `--web-root DIR` | `web` | Directory to serve. Relative paths are resolved from the current directory. |
+| `--album-root DIR` | Disabled | Enable the persistent album API using this directory, which must be outside the web root. |
 
 **The server is reachable by every device on your network and has no login
 yet.** Run it only on a network you trust, or use `--bind 127.0.0.1` to accept
@@ -230,6 +240,76 @@ tmux new -s inkhibit
 ./build/inkhibit-server
 # Detach with Ctrl+B, then D. Reattach later with: tmux attach -t inkhibit
 ```
+
+### Persistent album API
+
+Album mode is optional and does not access the panel. Run from the repository
+root, using a private directory writable by the server account:
+
+```sh
+./build/inkhibit-server --bind 127.0.0.1 --port 8081 \
+  --album-root ./build/dev-album
+```
+
+On a development machine, substitute `./build-tests/inkhibit-server` and an
+album directory under `build-tests/`. Relative paths are resolved from the
+current working directory. The server creates missing album directories but
+rejects the web root itself and album directories beneath it, including through
+symlinks. Do not place a static `api/` directory inside the web root, because
+static GET files are checked before API handlers.
+
+**There is no authentication, album quota, or rate limiting yet.** The bind
+address is not restricted when `--album-root` is supplied; use
+`--bind 127.0.0.1` for local testing and do not expose this API to the internet.
+Every album route currently requires the exact `Host` header
+`127.0.0.1:<port>`. URLs using `bippy.local`, a LAN IP, or `localhost` therefore
+get `403` for album operations even though the static gallery still works.
+This header check is not authentication: a network client can set it itself.
+
+| Request | Successful response |
+| --- | --- |
+| `POST /api/album` | `201 Created`, `{"id":"1"}` |
+| `GET /api/album` | `200 OK`, `{"images":["1","2"]}` in numeric insertion order |
+| `DELETE /api/album/1` | `204 No Content`, empty body |
+
+Uploads are raw PNG bytes (not multipart form data), with exactly one
+`Content-Type: image/png` header. Images must decode to **600 × 400** and be
+at most **2 MiB**. They need not use the six-color palette; storage does not
+resize, dither, or modify their bytes. JPEG, HEIC, and PPM files must be converted
+before upload. The body limit applies to the listener while album mode is on
+and is enforced for fixed-length and chunked requests.
+
+From another terminal **on the Pi**, with prepared `first.png` and `second.png`:
+
+```sh
+curl -i -H 'Content-Type: image/png' --data-binary @first.png \
+  http://127.0.0.1:8081/api/album
+curl -i -H 'Content-Type: image/png' --data-binary @second.png \
+  http://127.0.0.1:8081/api/album
+curl -fsS http://127.0.0.1:8081/api/album
+```
+
+Stop and restart the server with the same album directory, then list it again
+to check persistence. Delete an image using an ID returned by the server:
+
+```sh
+curl -i -X DELETE http://127.0.0.1:8081/api/album/2
+curl -fsS http://127.0.0.1:8081/api/album
+```
+
+IDs are JSON strings to preserve 64-bit precision in browsers. They are
+positive decimal integers without leading zeros and are not reused after
+deletion. Repeating a successful delete returns `404`; malformed or overflowing
+IDs return `400`. Uploads return `400` for invalid images, `413` for oversized
+bodies, `415` for unsupported content types, and `500` for storage failures.
+Without `--album-root`, these API routes return `404`.
+
+Use only one server/store instance per album directory. Threads can share that
+instance, but separate processes are not coordinated. Files are published using
+temporary-file renames so partial PNG writes are not listed; sudden power-loss
+durability is not guaranteed. Do not manually edit the `.next-id` counter.
+This step has no image-download route, browser album controls, timer, or
+automatic display refresh.
 
 ## GPIO ownership and persistent state
 

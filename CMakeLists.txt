@@ -145,6 +145,7 @@ add_executable(inkhibit-server
 
 target_link_libraries(inkhibit-server PRIVATE
     inkhibit_server
+    inkhibit_album
 )
 
 set_target_properties(inkhibit-server PROPERTIES
