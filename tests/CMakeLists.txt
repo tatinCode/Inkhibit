@@ -16,6 +16,25 @@ foreach(case IN LISTS album_cases)
     set_tests_properties("album.${case}" PROPERTIES TIMEOUT 30)
 endforeach()
 
+add_executable(inkhibit_rotation_tests rotation_tests.cpp)
+target_link_libraries(inkhibit_rotation_tests PRIVATE inkhibit_album)
+target_compile_features(inkhibit_rotation_tests PRIVATE cxx_std_17)
+set_target_properties(inkhibit_rotation_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_rotation_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+set(rotation_cases
+    defaults intervals invalid_order invalid_queue invalid_history
+    sequential_cycle empty_single preserved_queue shuffle_cycles reshuffle
+    selection deleted_history success_queue success_navigation abandoned_history
+    rejected_target history_limit deadline_limits failed_display multiple_cycles
+)
+foreach(case IN LISTS rotation_cases)
+    add_test(NAME "rotation.${case}" COMMAND inkhibit_rotation_tests "${case}")
+    set_tests_properties("rotation.${case}" PROPERTIES TIMEOUT 30)
+endforeach()
+
 add_library(inkhibit_driver_under_test OBJECT
     "${PROJECT_SOURCE_DIR}/src/waveshare_lgpio.c"
     "${WAVESHARE_DIR}/e-Paper/EPD_4in0e.c"
