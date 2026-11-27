@@ -72,6 +72,7 @@ add_library(inkhibit_album STATIC
     src/album/image.cpp
     src/album/store.cpp
     src/album/rotation.cpp
+    src/album/rotation_store.cpp
 )
 
 target_compile_features(inkhibit_album PUBLIC cxx_std_17)
