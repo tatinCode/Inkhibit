@@ -31,6 +31,8 @@ set(rotation_cases
     rejected_target history_limit deadline_limits failed_display multiple_cycles
     reconcile_unchanged reconcile_deletions reconcile_additions
     reconcile_wraparound reconcile_navigation reconcile_shuffle reconcile_invalid
+    due_empty due_first_display due_single due_deadline due_missing_deadline
+    due_deleted_current due_restart due_invalid_state
 )
 foreach(case IN LISTS rotation_cases)
     add_test(NAME "rotation.${case}" COMMAND inkhibit_rotation_tests "${case}")

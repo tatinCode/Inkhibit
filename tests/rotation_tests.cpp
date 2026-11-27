@@ -575,6 +575,174 @@ void reconcile_invalid()
     }
 }
 
+void require_due(
+    const album::RotationState& state, Clock::time_point now, bool expected)
+{
+    const auto before = state;
+    REQUIRE(album::rotation_change_due(state, now) == expected);
+    require_same(state, before);
+}
+
+void due_empty()
+{
+    album::RotationState state;
+    require_due(state, Clock::time_point{}, false);
+
+    // Deleting every image must not trigger refreshes, even if overdue.
+    state.history = {7};
+    state.history_position = 0;
+    state.next_change = Clock::time_point{1h};
+    require_due(state, Clock::time_point{100h}, false);
+    state.next_change.reset();
+    require_due(state, Clock::time_point{100h}, false);
+}
+
+void due_first_display()
+{
+    for (const bool shuffle : {false, true}) {
+        album::RotationState state;
+        state.settings.shuffle = shuffle;
+        state.order = {7};
+        require_due(state, Clock::time_point{}, true);
+        state.order = {7, 8};
+        require_due(state, Clock::time_point{}, true);
+
+        // A prepared queue is not evidence that anything reached the panel.
+        state.remaining = {8, 7};
+        state.next_change = Clock::time_point{100h};
+        require_due(state, Clock::time_point{}, true);
+    }
+}
+
+void due_single()
+{
+    for (const bool shuffle : {false, true}) {
+        album::RotationState state;
+        state.settings.shuffle = shuffle;
+        state.order = {7};
+        state.history = {7};
+        state.history_position = 0;
+        require_due(state, Clock::time_point{}, false);
+
+        state.next_change = Clock::time_point{100h};
+        require_due(state, Clock::time_point{99h}, false);
+        require_due(state, *state.next_change, false);
+        require_due(state, Clock::time_point::max(), false);
+
+        // The cursor, not the last history entry, identifies the panel image.
+        state.history = {7, 8};
+        require_due(state, Clock::time_point{101h}, false);
+        state.history_position = 1;
+        require_due(state, Clock::time_point{101h}, true);
+    }
+}
+
+void due_deadline()
+{
+    for (const bool shuffle : {false, true}) {
+        auto state = example();
+        state.settings.shuffle = shuffle;
+        const auto deadline = *state.next_change;
+        const auto tick = Clock::duration{1};
+        require_due(state, deadline - tick, false);
+        require_due(state, deadline, true);
+        require_due(state, deadline + tick, true);
+        require_due(state, Clock::time_point::min(), false);
+        require_due(state, Clock::time_point::max(), true);
+
+        // Queue replenishment and timing are separate responsibilities.
+        state.remaining.clear();
+        require_due(state, deadline - tick, false);
+        require_due(state, deadline, true);
+
+        state.next_change = Clock::time_point::min();
+        require_due(state, Clock::time_point::min(), true);
+        state.next_change = Clock::time_point::max();
+        require_due(state, Clock::time_point::max() - tick, false);
+        require_due(state, Clock::time_point::max(), true);
+    }
+}
+
+void due_missing_deadline()
+{
+    auto state = example();
+    state.next_change.reset();
+    require_due(state, Clock::time_point{}, true);
+
+    state.order = {4}; // Only a replacement image is available.
+    require_due(state, Clock::time_point{}, true);
+
+    state.order = {3}; // The remaining image is already on the panel.
+    state.remaining.clear();
+    require_due(state, Clock::time_point{}, false);
+}
+
+void due_deleted_current()
+{
+    auto state = example();
+    state.order = {4};
+    const auto deadline = *state.next_change;
+
+    // Deleting the displayed image must not reset or bypass the timer.
+    require_due(state, deadline - Clock::duration{1}, false);
+    require_due(state, deadline, true);
+    require_due(state, deadline + 24h, true);
+
+    state.order = {1, 4};
+    require_due(state, deadline - Clock::duration{1}, false);
+    require_due(state, deadline, true);
+}
+
+void due_restart()
+{
+    // Simulate resuming an already-populated saved state.
+    auto state = example();
+    const auto deadline = *state.next_change;
+    require_due(state, deadline - 1h, false);
+
+    const auto now = deadline + 24h;
+    const auto before = state;
+    require_due(state, now, true);
+    require_due(state, now, true); // Checking alone does not consume the target.
+    require_target(album::next_rotation_target(state), 4);
+
+    // One successful display schedules from completion, not the old deadline.
+    const auto completed = now + 1min;
+    album::record_rotation_success(state,
+        *album::next_rotation_target(state), completed);
+    REQUIRE(state.history.size() == before.history.size() + 1);
+    REQUIRE(state.history.back() == 4);
+    REQUIRE(state.remaining.empty());
+    REQUIRE(state.next_change == completed + state.settings.interval);
+    require_due(state, completed, false);
+    require_due(state, *state.next_change, true);
+}
+
+void due_invalid_state()
+{
+    std::vector<album::RotationState> invalid;
+    auto state = example();
+    state.settings.interval = 1799s;
+    invalid.push_back(state);
+    state = example();
+    state.history_position = state.history.size();
+    invalid.push_back(state);
+    state = example();
+    state.remaining = {99};
+    invalid.push_back(state);
+    state = {};
+    state.history_position = 0; // Validate even before the empty-album shortcut.
+    invalid.push_back(state);
+
+    for (const auto& item : invalid) {
+        const auto before = item;
+        expect_invalid([&] {
+            album::rotation_change_due(item, Clock::time_point{});
+        });
+        require_same(item, before);
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -607,7 +775,15 @@ int main(int argc, char** argv)
             {"reconcile_wraparound", reconcile_wraparound},
             {"reconcile_navigation", reconcile_navigation},
             {"reconcile_shuffle", reconcile_shuffle},
-            {"reconcile_invalid", reconcile_invalid}
+            {"reconcile_invalid", reconcile_invalid},
+            {"due_empty", due_empty},
+            {"due_first_display", due_first_display},
+            {"due_single", due_single},
+            {"due_deadline", due_deadline},
+            {"due_missing_deadline", due_missing_deadline},
+            {"due_deleted_current", due_deleted_current},
+            {"due_restart", due_restart},
+            {"due_invalid_state", due_invalid_state}
         };
         if (argc != 2) {
             throw std::runtime_error("Expected one rotation test case name");

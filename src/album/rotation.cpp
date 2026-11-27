@@ -362,6 +362,33 @@ namespace inkhibit::album {
         state = std::move(updated);
     }
 
+    bool rotation_change_due(
+            const RotationState& state,
+            std::chrono::system_clock::time_point now){
+        validate_rotation_state(state);
+
+        if (state.order.empty()) {
+            return false;
+        }
+
+        const auto current = current_image(state);
+
+        // Avoid refreshing an already-displayed single-image album.
+        if (state.order.size() == 1 && current
+                && state.order.front() == *current) {
+            return false;
+        }
+
+        // First display, or no saved schedule: attempt immediately.
+        if (!current || !state.next_change) {
+            return true;
+        }
+
+        // A restart preserves the deadline. An overdue deadline permits
+        // one attempt; successful completion will establish a new deadline.
+        return now >= *state.next_change;
+    }   // end of rotation_change_due
+
 } // end of namespace inkhibit::album
 
 

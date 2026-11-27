@@ -91,6 +91,12 @@ namespace inkhibit::album {
             const std::vector<ImageId>& available,
             std::mt19937& random);
 
+    // Whether automatic rotation should attempt to select an image now.
+    // Does not modify state, prepare a cycle, or perform a refresh.
+    bool rotation_change_due(
+            const RotationState& state,
+            std::chrono::system_clock::time_point now);
+
 } // namespace inkhibit::album
 
 #endif
