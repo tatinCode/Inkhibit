@@ -59,6 +59,28 @@ foreach(case IN LISTS rotation_store_cases)
     set_tests_properties("rotation_store.${case}" PROPERTIES TIMEOUT 30)
 endforeach()
 
+# Fake album, storage, clock, and panel callbacks; no files or hardware.
+add_executable(inkhibit_rotation_step_tests rotation_step_tests.cpp)
+target_link_libraries(inkhibit_rotation_step_tests PRIVATE inkhibit_album)
+target_compile_features(inkhibit_rotation_step_tests PRIVATE cxx_std_17)
+set_target_properties(inkhibit_rotation_step_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_rotation_step_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+
+set(rotation_step_cases
+    first_start first_start_empty waiting overdue new_cycle shuffle_saved
+    forward_history empty_album single_image reconcile deleted_current
+    save_before_display display_failure save_after_display clock_after_display
+    stop invalid_display_result missing_callbacks invalid_state
+)
+foreach(case IN LISTS rotation_step_cases)
+    add_test(NAME "rotation_step.${case}"
+        COMMAND inkhibit_rotation_step_tests "${case}")
+    set_tests_properties("rotation_step.${case}" PROPERTIES TIMEOUT 30)
+endforeach()
+
 add_library(inkhibit_driver_under_test OBJECT
     "${PROJECT_SOURCE_DIR}/src/waveshare_lgpio.c"
     "${WAVESHARE_DIR}/e-Paper/EPD_4in0e.c"
