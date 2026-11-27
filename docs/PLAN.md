@@ -77,7 +77,7 @@ an image, refreshes the panel once, and puts it to sleep. Phase 1 is complete.
 | Step | Status |
 | --- | --- |
 | 1. Serve the gallery (`inkhibit-server`) | Done. All tests pass on the development machine and the Pi, and the gallery opens from other devices on the network. |
-| 2. Persistent album storage and add/list/remove API (`web-album`) | Implemented; storage tests pass on PC and Pi. New HTTP tests pass on PC; Pi HTTP validation pending. |
+| 2. Persistent album storage and add/list/remove API (`web-album`) | Implemented; storage and HTTP tests pass on PC and Pi. |
 | 3. Timed album rotation | Next: configurable elapsed interval, 30 minutes or longer. |
 | 4. Browser album controls, status, authentication, systemd service | Planned. |
 
@@ -125,9 +125,9 @@ Album decisions:
 - The maintainer built the hardware targets on the Pi and confirmed the
   six-color bars and upper-left L marker on the actual panel, then reported the
   setup working after the chip-select correction.
-- All **203 CTest cases pass** on the development machine. The maintainer reported
-  the previous **194-case suite passing on the Raspberry Pi**. The nine new
-  album HTTP cases still need a Pi run. The suite includes eight EXIF, nine
+- All **203 CTest cases pass** on the development machine and, as reported by
+  the maintainer, on the Raspberry Pi, including the nine album HTTP cases.
+  The suite includes eight EXIF, nine
   cooldown, thirteen album-library, and twenty-four server cases. Automated hardware tests
   use fakes and simulated clocks; physical validation is separate.
 - The maintainer generated previews with both methods and verified dithered
@@ -202,10 +202,11 @@ Album decisions:
 
 ### Next implementation increment
 
-Run the 203-case suite on the Pi and smoke-test the album API: upload two prepared
-PNGs, restart, verify listing order, delete one, and verify the other remains.
+The 203-case suite has passed on the Pi, including the real-server album tests.
+A manual upload/restart/delete smoke test remains optional; it is not required
+to begin the next increment.
 
-Then implement timed album rotation through the existing image pipeline and
+Implement timed album rotation through the existing image pipeline and
 display guard. Intervals are elapsed durations, from 30 minutes to multiple
 hours, not fixed times of day. The proposed default is one hour; no maximum
 interval has been chosen. Persist the interval across restarts, never interrupt

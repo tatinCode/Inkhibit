@@ -20,9 +20,8 @@ Spectra 6**, using the model-specific `EPD_4in0e` driver.
   the panel yet.
 - The maintainer has verified the test pattern and dithered image display on
   the physical panel, including automatic cooldown waiting and cancellation.
-  All **203 CTest cases pass** on the development machine. The maintainer
-  reported the previous **194-case suite passing on the Raspberry Pi**;
-  the new album HTTP tests still need a Pi run.
+  All **203 CTest cases pass** on the development machine and, as reported by
+  the maintainer, on the Raspberry Pi, including the album HTTP tests.
 
 The gallery prototype in [web/](web/README.md) still keeps its artwork and
 previews in the browser; it is not yet connected to the server album.
