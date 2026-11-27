@@ -36,7 +36,6 @@ namespace inkhibit::album {
             throw std::invalid_argument(
                     "Rotation interval must be at least 30 minutes");
         }
-
         std::unordered_set<ImageId> album_ids;
         for (const auto id : state.order) {
             if (id == 0 || !album_ids.insert(id).second) {
@@ -241,6 +240,127 @@ namespace inkhibit::album {
         updated.next_change = completed_at + delay;
         state = std::move(updated);
     }   // end of record_rotation_success
+
+    void remove_missing_rotation_images(
+            RotationState& state,
+            const std::vector<ImageId>& available){
+        validate_rotation_state(state);
+
+        std::unordered_set<ImageId> available_ids;
+        for (const auto id : available) {
+            if (id == 0 || !available_ids.insert(id).second) {
+                throw std::invalid_argument(
+                        "Available images must contain unique positive IDs");
+            }
+        }
+
+        // Work on a copy so allocation failures leave state unchanged.
+        auto updated = state;
+
+        const auto missing = [&available_ids](ImageId id) {
+            return available_ids.count(id) == 0;
+        };
+
+        updated.order.erase(
+                std::remove_if(
+                    updated.order.begin(), updated.order.end(), missing),
+                updated.order.end());
+
+        updated.remaining.erase(
+                std::remove_if(
+                    updated.remaining.begin(), updated.remaining.end(), missing),
+                updated.remaining.end());
+
+        validate_rotation_state(updated);
+        state = std::move(updated);
+    }   //end of remove_missing_rotation_images
+
+    void reconcile_rotation_images(
+            RotationState& state,
+            const std::vector<ImageId>& available,
+            std::mt19937& random){
+        auto updated = state;
+
+        // Also validates the available IDs.
+        remove_missing_rotation_images(updated, available);
+
+        std::unordered_set<ImageId> known(
+                updated.order.begin(), updated.order.end());
+
+        // Append new images in numeric order, regardless of caller ordering.
+        auto sorted = available;
+        std::sort(sorted.begin(), sorted.end());
+
+        std::vector<ImageId> added;
+        for (const auto id : sorted) {
+            if (known.insert(id).second) {
+                updated.order.push_back(id);
+                added.push_back(id);
+            }
+        }
+
+        if (added.empty()) {
+            state = std::move(updated);
+            return;
+        }
+
+        if (updated.settings.shuffle) {
+            // Insert new images without disturbing the relative order of
+            // images already queued.
+            for (const auto id : added) {
+                std::uniform_int_distribution<std::size_t> pick(
+                        0, updated.remaining.size());
+
+                using Difference = std::vector<ImageId>::difference_type;
+                const auto position = static_cast<Difference>(pick(random));
+
+                updated.remaining.insert(
+                        updated.remaining.begin() + position, id);
+            }
+        } else {
+            // Include existing pending images and new uploads, but never
+            // bring back images already consumed during this cycle.
+            std::unordered_set<ImageId> pending(
+                    updated.remaining.begin(), updated.remaining.end());
+
+            pending.insert(added.begin(), added.end());
+
+            auto queue = updated.order;
+
+            // Use the end of history, not history_position: going Previous
+            // must not change where the unconsumed queue resumes.
+            auto last = queue.end();
+            if (!updated.history.empty()) {
+                last = std::find(
+                        queue.begin(), queue.end(), updated.history.back());
+            }
+
+            if (last != queue.end()) {
+                auto next = last;
+                ++next;
+                std::rotate(queue.begin(), next, queue.end());
+            } else if (!updated.remaining.empty()) {
+                // The last displayed/consumed image may have been deleted.
+                const auto first = std::find(
+                        queue.begin(), queue.end(), updated.remaining.front());
+
+                std::rotate(queue.begin(), first, queue.end());
+            }
+
+            queue.erase(
+                    std::remove_if(
+                        queue.begin(), queue.end(),
+                        [&pending](ImageId id) {
+                        return pending.count(id) == 0;
+                        }),
+                    queue.end());
+
+            updated.remaining = std::move(queue);
+        }
+
+        validate_rotation_state(updated);
+        state = std::move(updated);
+    }
 
 } // end of namespace inkhibit::album
 

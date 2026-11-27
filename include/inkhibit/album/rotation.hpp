@@ -78,6 +78,18 @@ namespace inkhibit::album {
             const RotationTarget& target,
             std::chrono::system_clock::time_point completed_at);
 
+    // Removes missing images from custom order and the remaining queue.
+    // Preserves history and the deadline. Does not add new images.
+    void remove_missing_rotation_images(
+            RotationState& state,
+            const std::vector<ImageId>& available);
+
+    // Reconciles saved state with the current album contents.
+    // Preserves history and the deadline.
+    void reconcile_rotation_images(
+            RotationState& state,
+            const std::vector<ImageId>& available,
+            std::mt19937& random);
 
 } // namespace inkhibit::album
 

@@ -431,6 +431,150 @@ void multiple_cycles()
     }
 }
 
+void reconcile_unchanged()
+{
+    for (const bool shuffle : {false, true}) {
+        std::mt19937 random{10};
+        auto state = example();
+        state.settings.shuffle = shuffle;
+        const auto before = state;
+        const auto generator_before = random;
+
+        // Caller ordering must not reset an existing custom order.
+        album::reconcile_rotation_images(state, {4, 2, 1, 3}, random);
+
+        require_same(state, before);
+        REQUIRE(random == generator_before);
+    }
+}
+
+void reconcile_deletions()
+{
+    std::mt19937 random{11};
+    auto state = example();
+    const auto before = state;
+
+    album::reconcile_rotation_images(state, {1, 4}, random);
+
+    REQUIRE(state.order == (Ids{1, 4}));
+    REQUIRE(state.remaining == (Ids{4}));
+    REQUIRE(state.history == before.history);
+    REQUIRE(state.history_position == before.history_position);
+    REQUIRE(state.next_change == before.next_change);
+
+    album::reconcile_rotation_images(state, {}, random);
+
+    REQUIRE(state.order.empty());
+    REQUIRE(state.remaining.empty());
+    REQUIRE(state.history == before.history);
+    REQUIRE(state.history_position == before.history_position);
+    REQUIRE(state.next_change == before.next_change);
+}
+
+void reconcile_additions()
+{
+    std::mt19937 random{12};
+    auto state = example();
+    const auto before = state;
+
+    album::reconcile_rotation_images(state, {6, 4, 2, 5, 1, 3}, random);
+
+    REQUIRE(state.order == (Ids{1, 2, 3, 4, 5, 6}));
+    REQUIRE(state.remaining == (Ids{4, 5, 6}));
+    REQUIRE(state.history == before.history);
+    REQUIRE(state.history_position == before.history_position);
+    REQUIRE(state.next_change == before.next_change);
+
+    const auto reconciled = state;
+    album::reconcile_rotation_images(state, {1, 2, 3, 4, 5, 6}, random);
+    require_same(state, reconciled);
+}
+
+void reconcile_wraparound()
+{
+    std::mt19937 random{13};
+    album::RotationState state;
+    state.order = {1, 2, 3};
+    state.remaining = {1, 2};
+    state.history = {3};
+    state.history_position = 0;
+
+    album::reconcile_rotation_images(state, {1, 2, 3, 4}, random);
+
+    // New image 4 belongs after 3, before wrapping to 1.
+    REQUIRE(state.remaining == (Ids{4, 1, 2}));
+
+    state.order = {8, 2, 5};
+    state.remaining = {8, 2};
+    state.history = {5};
+
+    album::reconcile_rotation_images(state, {2, 5, 7, 8}, random);
+
+    REQUIRE(state.order == (Ids{8, 2, 5, 7}));
+    REQUIRE(state.remaining == (Ids{7, 8, 2}));
+}
+
+void reconcile_navigation()
+{
+    std::mt19937 random{14};
+    auto state = example();
+    state.history_position = 0; // User went Previous.
+    const auto before = state;
+
+    album::reconcile_rotation_images(state, {1, 2, 3, 4, 5}, random);
+
+    REQUIRE(state.remaining == (Ids{4, 5}));
+    REQUIRE(state.history == before.history);
+    REQUIRE(state.history_position == 0);
+    REQUIRE(state.next_change == before.next_change);
+    require_target(album::next_rotation_target(state), 2, 1);
+}
+
+void reconcile_shuffle()
+{
+    for (unsigned seed = 0; seed < 100; ++seed) {
+        std::mt19937 random{seed};
+        auto state = example();
+        state.settings.shuffle = true;
+        state.remaining = {4, 2};
+        const auto before = state;
+
+        album::reconcile_rotation_images(state, {1, 2, 3, 4, 5, 6}, random);
+
+        auto sorted = state.remaining;
+        std::sort(sorted.begin(), sorted.end());
+        REQUIRE(sorted == (Ids{2, 4, 5, 6}));
+
+        // Existing shuffled images retain their relative order.
+        const auto four = std::find(
+            state.remaining.begin(), state.remaining.end(), 4);
+        const auto two = std::find(
+            state.remaining.begin(), state.remaining.end(), 2);
+        REQUIRE(four < two);
+        REQUIRE(state.history == before.history);
+        REQUIRE(state.history_position == before.history_position);
+        REQUIRE(state.next_change == before.next_change);
+        album::validate_rotation_state(state);
+    }
+}
+
+void reconcile_invalid()
+{
+    for (const auto& available : {Ids{0}, Ids{1, 1}, Ids{1, 0, 2}}) {
+        std::mt19937 random{15};
+        auto state = example();
+        const auto before = state;
+        const auto generator_before = random;
+
+        expect_invalid([&] {
+            album::reconcile_rotation_images(state, available, random);
+        });
+
+        require_same(state, before);
+        REQUIRE(random == generator_before);
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -456,7 +600,14 @@ int main(int argc, char** argv)
             {"history_limit", history_limit},
             {"deadline_limits", deadline_limits},
             {"failed_display", failed_display},
-            {"multiple_cycles", multiple_cycles}
+            {"multiple_cycles", multiple_cycles},
+            {"reconcile_unchanged", reconcile_unchanged},
+            {"reconcile_deletions", reconcile_deletions},
+            {"reconcile_additions", reconcile_additions},
+            {"reconcile_wraparound", reconcile_wraparound},
+            {"reconcile_navigation", reconcile_navigation},
+            {"reconcile_shuffle", reconcile_shuffle},
+            {"reconcile_invalid", reconcile_invalid}
         };
         if (argc != 2) {
             throw std::runtime_error("Expected one rotation test case name");

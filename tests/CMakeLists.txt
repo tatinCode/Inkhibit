@@ -29,6 +29,8 @@ set(rotation_cases
     sequential_cycle empty_single preserved_queue shuffle_cycles reshuffle
     selection deleted_history success_queue success_navigation abandoned_history
     rejected_target history_limit deadline_limits failed_display multiple_cycles
+    reconcile_unchanged reconcile_deletions reconcile_additions
+    reconcile_wraparound reconcile_navigation reconcile_shuffle reconcile_invalid
 )
 foreach(case IN LISTS rotation_cases)
     add_test(NAME "rotation.${case}" COMMAND inkhibit_rotation_tests "${case}")
