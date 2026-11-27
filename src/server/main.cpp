@@ -1,5 +1,8 @@
 #include "inkhibit/server/server.hpp"
 
+#include "inkhibit/album/store.hpp"
+#include "inkhibit/album/image.hpp"
+
 #include <httplib.h>
 
 #include <atomic>
@@ -8,6 +11,11 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <optional>
+#include <filesystem>
+#include <stdexcept>
+#include <charconv>
+#include <system_error>
 
 #include <arpa/inet.h>
 #include <net/if.h>
@@ -24,15 +32,17 @@ namespace{
         std::string bind = "0.0.0.0";
         int port = 8080;
         std::string web_root = "web";
+        std::optional<std::string> album_root;
     };
 
     void print_usage() {
         std::cout
             << "Usage: inkhibit-server "
-            << "[--bind ADDRESS] [--port PORT] [--web-root DIR]\n\n"
+            << "[--bind ADDRESS] [--port PORT] [--web-root DIR] [--album-root DIR]\n\n"
             << "Serves the Inkhibit gallery and API over HTTP.\n"
             << "Defaults: --bind 0.0.0.0 --port 8080 --web-root web\n"
             << "Use --bind 127.0.0.1 to accept connections from this machine only.\n"
+            << "--album-root DIR enables the unauthenticated album API.\n"
             << "Press Ctrl+C to stop the server.\n";
     }
 
@@ -81,6 +91,12 @@ namespace{
             }
             else if (name == "--web-root"){
                 options.web_root = value;
+            }
+            else if (name == "--album-root") {
+                if (value.empty()) {
+                    return false;
+                }
+                options.album_root = value;
             }
             else {
                 return false;
@@ -159,8 +175,124 @@ int main(int argc, char** argv) {
     }
 
     try {
+        std::optional<inkhibit::album::AlbumStore> album;
         httplib::Server server;
         inkhibit::configure_server(server, options.web_root);
+
+        if (options.album_root) {
+            namespace fs = std::filesystem;
+
+            const auto web_root = fs::canonical(options.web_root);
+            const auto album_root = 
+                fs::weakly_canonical(fs::absolute(*options.album_root));
+
+            // Reject the web root itself and any album directory beneath it.
+            for (auto path = album_root;; path = path.parent_path()) {
+                if (path == web_root) {
+                    throw std::runtime_error("Album root must be outside the web root");
+                }
+                if (path == path.root_path()) {
+                    break;
+                }
+            }
+
+            album.emplace(album_root);
+            const auto host = "127.0.0.1:" + std::to_string(options.port);
+
+            server.Get("/api/album",
+                    [&store = *album, host](const httplib::Request& request,
+                        httplib::Response& response) {
+                    // Loopback binding alone doesn't stop browser DNS rebinding.
+                    if (request.get_header_value("Host") != host) {
+                    response.status = 403;
+                    return;
+                    }
+
+                    const auto ids = store.list();
+                    std::string body = "{\"images\":[";
+                    for (std::size_t i = 0; i < ids.size(); ++i) {
+                        if (i != 0) {
+                            body += ',';
+                        }
+
+                        body += '"' + std::to_string(ids[i]) + '"';
+
+                    }
+                    body += "]}\n";
+                    response.set_content(body, "application/json");
+                });
+
+
+            server.set_payload_max_length(inkhibit::album::max_png_bytes);
+
+            server.Post("/api/album",
+                    [&store = *album, host](const httplib::Request& request,
+                        httplib::Response& response) {
+                    if (request.get_header_value("Host") != host) {
+                    response.status = 403;
+                    return;
+                    }
+
+                    if (request.get_header_value_count("Content-Type") != 1
+                            || request.get_header_value("Content-Type") != "image/png") {
+                    response.status = 415;
+                    return;
+                    }
+
+                    const std::vector<std::uint8_t> png(
+                            request.body.begin(), request.body.end());
+
+                    inkhibit::album::ImageId id;
+                    try {
+                    id = store.add(png);
+                    } catch (const std::invalid_argument& error) {
+                        response.status = 400;
+                        response.set_content(error.what(), "text/plain");
+                        return;
+                    } catch (const std::exception& error) {
+                        std::cerr << "inkhibit-server: Album upload failed: "
+                            << error.what() << '\n';
+                        response.status = 500;
+                        response.set_content("Could not save album image\n", "text/plain");
+                        return;
+                    }
+
+                    response.status = 201;
+                    response.set_content(
+                            "{\"id\":\"" + std::to_string(id) + "\"}\n",
+                            "application/json");
+                    });
+
+            server.Delete(R"(/api/album/([^/]+))",
+                    [&store = *album, host](const httplib::Request& request,
+                        httplib::Response& response) {
+                    if (request.get_header_value("Host") != host) {
+                    response.status = 403;
+                    return;
+                    }
+
+                    const auto text = request.matches[1].str();
+                    const char* end = text.data() + text.size();
+                    inkhibit::album::ImageId id = 0;
+                    const auto result = std::from_chars(text.data(), end, id);
+
+                    if (result.ec != std::errc{} || result.ptr != end
+                            || id == 0 || text.front() == '0') {
+                    response.status = 400;
+                    response.set_content("Invalid album image ID\n", "text/plain");
+                    return;
+                    }
+
+                    try {
+                        response.status = store.remove(id) ? 204 : 404;
+                    } catch (const std::exception& error) {
+                        std::cerr << "inkhibit-server: Album deletion failed: "
+                            << error.what() << '\n';
+                        response.status = 500;
+                        response.set_content("Could not remove album image\n", "text/plain");
+                    }
+                    });
+        }
 
         if (!server.bind_to_port(options.bind, options.port)) {
             std::cerr
@@ -176,13 +308,13 @@ int main(int argc, char** argv) {
                 const timespec interval{0, 100'000'000};
 
                 while (!finished) {
-                    const int number = sigtimedwait(&signals, nullptr, &interval);
-                    if (number > 0) {
-                        received = number;
-                        server.stop();
+                const int number = sigtimedwait(&signals, nullptr, &interval);
+                if (number > 0) {
+                received = number;
+                server.stop();
 
-                        return;
-                    }
+                return;
+                }
                 }
                 });
 

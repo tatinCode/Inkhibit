@@ -1,4 +1,5 @@
 #include "inkhibit/server/server.hpp"
+#include "album_png_fixture.hpp"
 
 #include <httplib.h>
 
@@ -221,9 +222,8 @@ sockaddr_in loopback(int port)
     return address;
 }
 
-// Sends the request target byte for byte. HTTP clients may normalize or encode
-// paths, which would hide what the server does with a hostile target.
-std::string raw_get(int port, const std::string& target)
+// Sends bytes without client-side path/header normalization.
+std::string raw_request(int port, const std::string& request)
 {
     Socket socket;
     const timeval timeout{5, 0};
@@ -236,8 +236,6 @@ std::string raw_get(int port, const std::string& target)
     REQUIRE(::connect(socket.fd, reinterpret_cast<const sockaddr*>(&address),
         sizeof address) == 0);
 
-    const std::string request = "GET " + target + " HTTP/1.1\r\n"
-        "Host: 127.0.0.1\r\nConnection: close\r\n\r\n";
     std::size_t sent = 0;
     while (sent < request.size()) {
         const auto count = ::send(socket.fd, request.data() + sent,
@@ -267,6 +265,12 @@ std::string raw_get(int port, const std::string& target)
         response.append(buffer, static_cast<std::size_t>(count));
     }
     return response;
+}
+
+std::string raw_get(int port, const std::string& target)
+{
+    return raw_request(port, "GET " + target + " HTTP/1.1\r\n"
+        "Host: 127.0.0.1\r\nConnection: close\r\n\r\n");
 }
 
 int status_of(const std::string& response)
@@ -593,6 +597,9 @@ void test_cli_help()
         "Defaults: --bind 0.0.0.0 --port 8080 --web-root web"));
     REQUIRE(contains(result.output,
         "Use --bind 127.0.0.1 to accept connections from this machine only."));
+    REQUIRE(contains(result.output, "[--album-root DIR]"));
+    REQUIRE(contains(result.output,
+        "--album-root DIR enables the unauthenticated album API."));
 }
 
 void test_cli_usage()
@@ -611,6 +618,8 @@ void test_cli_usage()
         {"--port", " 80"},
         {"--port", "80a"},
         {"--web-root"},
+        {"--album-root"},
+        {"--album-root", ""},
         {"--unknown", "value"},
         {"--help", "--help"},
         {"--port", "8080", "--bind"},
@@ -745,6 +754,234 @@ void test_cli_default_bind()
     REQUIRE(!contains(output, "0.0.0.0"));
 }
 
+std::string png_body(std::uint32_t width = 600, std::uint32_t height = 400)
+{
+    const auto bytes = album_fixture::png(width, height);
+    return {bytes.begin(), bytes.end()};
+}
+
+httplib::Client album_client(int port)
+{
+    httplib::Client client("127.0.0.1", port);
+    client.set_connection_timeout(5);
+    client.set_read_timeout(5);
+    client.set_write_timeout(5);
+    return client;
+}
+
+void check_response(const httplib::Result& result, int status,
+    const std::string& body)
+{
+    REQUIRE(result);
+    REQUIRE(result->status == status);
+    REQUIRE(result->body == body);
+}
+
+void check_json(const httplib::Result& result, int status,
+    const std::string& body)
+{
+    check_response(result, status, body);
+    REQUIRE(result->get_header_value("Content-Type") == "application/json");
+}
+
+ServerProcess start_album(Site& site, const fs::path& root)
+{
+    return start_server_process(site.web, site.directory.path / "server.log",
+        {"--bind", "127.0.0.1", "--album-root", root.string()});
+}
+
+void test_album_disabled()
+{
+    Site site;
+    auto process = start_server_process(site.web, site.directory.path / "server.log",
+        {"--bind", "127.0.0.1"});
+    auto client = album_client(process.port);
+    const auto listed = client.Get("/api/album");
+    REQUIRE(listed && listed->status == 404);
+    const auto post = client.Post("/api/album", png_body(), "image/png");
+    REQUIRE(post && post->status == 404);
+    const auto removed = client.Delete("/api/album/1");
+    REQUIRE(removed && removed->status == 404);
+}
+
+void test_album_lifecycle()
+{
+    Site site;
+    const auto root = site.directory.path / "album";
+    const auto log = site.directory.path / "server.log";
+    const auto body = png_body();
+    {
+        auto process = start_album(site, root);
+        auto client = album_client(process.port);
+        check_json(client.Get("/api/album"), 200, "{\"images\":[]}\n");
+        check_json(client.Post("/api/album", body, "image/png"), 201, "{\"id\":\"1\"}\n");
+        auto second = png_body();
+        // A different valid PNG, so byte preservation isn't confused with IDs.
+        const auto black = album_fixture::png(600, 400, 0);
+        second.assign(black.begin(), black.end());
+        check_json(client.Post("/api/album", second, "image/png"), 201, "{\"id\":\"2\"}\n");
+        check_json(client.Get("/api/album"), 200, "{\"images\":[\"1\",\"2\"]}\n");
+        REQUIRE(read_file(root / "1.png") == body);
+        REQUIRE(read_file(root / "2.png") == second);
+        stop_server_process(process, log, SIGTERM);
+    }
+    {
+        auto process = start_album(site, root);
+        auto client = album_client(process.port);
+        check_json(client.Get("/api/album"), 200, "{\"images\":[\"1\",\"2\"]}\n");
+        check_response(client.Delete("/api/album/2"), 204, "");
+        REQUIRE(!fs::exists(root / "2.png"));
+        const auto missing = client.Delete("/api/album/2");
+        REQUIRE(missing && missing->status == 404);
+        stop_server_process(process, log, SIGTERM);
+    }
+    {
+        auto process = start_album(site, root);
+        auto client = album_client(process.port);
+        check_json(client.Get("/api/album"), 200, "{\"images\":[\"1\"]}\n");
+        check_json(client.Post("/api/album", body, "image/png"), 201, "{\"id\":\"3\"}\n");
+        REQUIRE(read_file(root / "1.png") == body);
+    }
+}
+
+void test_album_invalid_uploads()
+{
+    Site site;
+    const auto root = site.directory.path / "album";
+    auto process = start_album(site, root);
+    auto client = album_client(process.port);
+    auto truncated = png_body();
+    truncated.resize(33);
+    for (const auto& body : {std::string{}, std::string("not a PNG"),
+            png_body(599, 400), png_body(400, 600), truncated}) {
+        const auto result = client.Post("/api/album", body, "image/png");
+        REQUIRE(result && result->status == 400);
+        check_json(client.Get("/api/album"), 200, "{\"images\":[]}\n");
+        REQUIRE(fs::is_empty(root));
+    }
+    check_json(client.Post("/api/album", png_body(), "image/png"), 201, "{\"id\":\"1\"}\n");
+}
+
+void test_album_content_type()
+{
+    Site site;
+    const auto root = site.directory.path / "album";
+    auto process = start_album(site, root);
+    const auto host = "127.0.0.1:" + std::to_string(process.port);
+    const auto body = png_body();
+    for (const auto& headers : {std::string{},
+            std::string("Content-Type: image/jpeg\r\n"),
+            std::string("Content-Type: application/octet-stream\r\n"),
+            std::string("Content-Type: image/png\r\nContent-Type: image/png\r\n")}) {
+        const auto result = raw_request(process.port, "POST /api/album HTTP/1.1\r\nHost: "
+            + host + "\r\nConnection: close\r\nContent-Length: "
+            + std::to_string(body.size()) + "\r\n" + headers + "\r\n" + body);
+        REQUIRE(status_of(result) == 415);
+        REQUIRE(fs::is_empty(root));
+    }
+}
+
+void test_album_payload_limit()
+{
+    Site site;
+    const auto root = site.directory.path / "album";
+    auto process = start_album(site, root);
+    auto client = album_client(process.port);
+    constexpr std::size_t limit = 2 * 1024 * 1024;
+    auto body = png_body();
+    body.resize(limit, '\0');
+    check_json(client.Post("/api/album", body, "image/png"), 201, "{\"id\":\"1\"}\n");
+    body.push_back('\0');
+    const auto too_large = client.Post("/api/album", body, "image/png");
+    REQUIRE(too_large && too_large->status == 413);
+
+    // Chunked requests have no Content-Length; enforce the cumulative limit
+    // as bytes arrive, not just the declared length of a fixed-size request.
+    const auto host = "127.0.0.1:" + std::to_string(process.port);
+    const auto response = raw_request(process.port,
+        "POST /api/album HTTP/1.1\r\nHost: " + host
+        + "\r\nContent-Type: image/png\r\nTransfer-Encoding: chunked\r\n"
+          "Connection: close\r\n\r\n200000\r\n"
+        + body.substr(0, limit) + "\r\n1\r\nX\r\n0\r\n\r\n");
+    REQUIRE(status_of(response) == 413);
+    check_json(client.Get("/api/album"), 200, "{\"images\":[\"1\"]}\n");
+    REQUIRE(!fs::exists(root / "2.png"));
+}
+
+void test_album_host()
+{
+    Site site;
+    const auto root = site.directory.path / "album";
+    auto process = start_album(site, root);
+    auto client = album_client(process.port);
+    check_json(client.Post("/api/album", png_body(), "image/png"), 201, "{\"id\":\"1\"}\n");
+    for (const auto& host : {std::string("untrusted.example:") + std::to_string(process.port),
+            std::string("localhost:") + std::to_string(process.port)}) {
+        const httplib::Headers headers{{"Host", host}};
+        const auto listed = client.Get("/api/album", headers);
+        const auto added = client.Post("/api/album", headers, png_body(), "image/png");
+        const auto removed = client.Delete("/api/album/1", headers);
+        REQUIRE(listed && listed->status == 403);
+        REQUIRE(added && added->status == 403);
+        REQUIRE(removed && removed->status == 403);
+    }
+    check_json(client.Get("/api/album"), 200, "{\"images\":[\"1\"]}\n");
+}
+
+void test_album_delete_ids()
+{
+    Site site;
+    auto process = start_album(site, site.directory.path / "album");
+    auto client = album_client(process.port);
+    check_json(client.Post("/api/album", png_body(), "image/png"), 201, "{\"id\":\"1\"}\n");
+    for (const auto* id : {"0", "01", "-1", "+1", "1x", "18446744073709551616"}) {
+        const auto response = client.Delete(std::string("/api/album/") + id);
+        REQUIRE(response && response->status == 400);
+    }
+    // A valid uint64_t ID isn't invalid merely because JavaScript can't represent it.
+    for (const auto* id : {"2", "9007199254740993", "18446744073709551615"}) {
+        const auto response = client.Delete(std::string("/api/album/") + id);
+        REQUIRE(response && response->status == 404);
+    }
+    check_json(client.Get("/api/album"), 200, "{\"images\":[\"1\"]}\n");
+    check_response(client.Delete("/api/album/1"), 204, "");
+}
+
+void test_album_private_root()
+{
+    Site site;
+    fs::create_directory_symlink(site.web, site.directory.path / "web-link");
+    for (const auto& root : {site.web, site.web / "new" / "album",
+            site.directory.path / "web-link" / "album"}) {
+        // Exercise relative paths and non-existent suffixes too.
+        const auto relative = fs::relative(root, fs::current_path());
+        const auto result = run_cli(site.directory,
+            {"--bind", "127.0.0.1", "--port", std::to_string(free_port()),
+             "--web-root", site.web.string(), "--album-root", relative.string()});
+        require_exit(result, 1);
+        REQUIRE(contains(result.output, "Album root must be outside the web root"));
+    }
+    REQUIRE(!fs::exists(site.web / "new"));
+    REQUIRE(!fs::exists(site.web / "album"));
+    // A name with the same prefix isn't actually inside the web root.
+    auto process = start_album(site, site.directory.path / "web-album");
+    require_file(process.port, "/api/album", "{\"images\":[]}\n", "application/json");
+}
+
+void test_album_storage_error()
+{
+    Site site;
+    const auto root = site.directory.path / "album";
+    auto process = start_album(site, root);
+    auto client = album_client(process.port);
+    fs::create_directory(root / "1.png.tmp"); // Deterministic write failure, even as root.
+    check_response(client.Post("/api/album", png_body(), "image/png"), 500,
+        "Could not save album image\n");
+    check_json(client.Get("/api/album"), 200, "{\"images\":[]}\n");
+    fs::remove(root / "1.png.tmp");
+    check_json(client.Post("/api/album", png_body(), "image/png"), 201, "{\"id\":\"2\"}\n");
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -769,7 +1006,16 @@ int main(int argc, char** argv)
             {"cli_invalid_root", test_cli_invalid_root},
             {"cli_port_in_use", test_cli_port_in_use},
             {"cli_signals", test_cli_signals},
-            {"cli_default_bind", test_cli_default_bind}
+            {"cli_default_bind", test_cli_default_bind},
+            {"album_disabled", test_album_disabled},
+            {"album_lifecycle", test_album_lifecycle},
+            {"album_invalid_uploads", test_album_invalid_uploads},
+            {"album_content_type", test_album_content_type},
+            {"album_payload_limit", test_album_payload_limit},
+            {"album_host", test_album_host},
+            {"album_delete_ids", test_album_delete_ids},
+            {"album_private_root", test_album_private_root},
+            {"album_storage_error", test_album_storage_error}
         };
         for (const auto& test : tests) {
             if (name == test.first) {

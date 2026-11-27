@@ -1,3 +1,21 @@
+add_executable(inkhibit_album_tests album_tests.cpp)
+target_link_libraries(inkhibit_album_tests PRIVATE inkhibit_album Threads::Threads)
+target_compile_features(inkhibit_album_tests PRIVATE cxx_std_17)
+set_target_properties(inkhibit_album_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_album_tests PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+set(album_cases
+    validation dimensions corrupt_pixels size_limit persistence numeric_order
+    invalid_add ignored_entries invalid_root bad_counter collision write_failure
+    concurrent_adds
+)
+foreach(case IN LISTS album_cases)
+    add_test(NAME "album.${case}" COMMAND inkhibit_album_tests "${case}")
+    set_tests_properties("album.${case}" PROPERTIES TIMEOUT 30)
+endforeach()
+
 add_library(inkhibit_driver_under_test OBJECT
     "${PROJECT_SOURCE_DIR}/src/waveshare_lgpio.c"
     "${WAVESHARE_DIR}/e-Paper/EPD_4in0e.c"
@@ -245,6 +263,9 @@ set(server_cases
     invalid_root duplicate_port rebind
     cli_help cli_usage cli_invalid_root cli_port_in_use cli_signals
     cli_default_bind
+    album_disabled album_lifecycle album_invalid_uploads album_content_type
+    album_payload_limit album_host album_delete_ids album_private_root
+    album_storage_error
 )
 foreach(case IN LISTS server_cases)
     add_test(NAME "server.${case}" COMMAND inkhibit_server_tests
