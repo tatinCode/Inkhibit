@@ -332,14 +332,28 @@ foreach(case IN ITEMS durations chunks retry recheck cancel recovery
     set_tests_properties("cooldown.${case}" PROPERTIES TIMEOUT 10)
 endforeach()
 
-# Exercise the real HTTP configuration and the actual inkhibit-server CLI on
-# free loopback ports. No display hardware is involved.
+# The real server CLI source, built without INKHIBIT_HAS_DISPLAY even on the
+# Pi. Test uploads must never start rotation or refresh the physical panel.
+add_executable(inkhibit_server_under_test
+    "${PROJECT_SOURCE_DIR}/src/server/main.cpp"
+)
+target_link_libraries(inkhibit_server_under_test PRIVATE
+    inkhibit_server
+    inkhibit_album
+)
+set_target_properties(inkhibit_server_under_test PROPERTIES CXX_EXTENSIONS OFF)
+
+# Exercise the real HTTP configuration and the server CLI on free loopback
+# ports. No display hardware is involved.
 add_executable(inkhibit_server_tests server_tests.cpp)
 target_link_libraries(inkhibit_server_tests PRIVATE inkhibit_server)
 target_compile_features(inkhibit_server_tests PRIVATE cxx_std_17)
 set_target_properties(inkhibit_server_tests PROPERTIES CXX_EXTENSIONS OFF)
-add_dependencies(inkhibit_server_tests inkhibit-server)
+add_dependencies(inkhibit_server_tests inkhibit_server_under_test)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_server_under_test PRIVATE
+        -Wall -Wextra -Wpedantic
+    )
     target_compile_options(inkhibit_server_tests PRIVATE
         -Wall -Wextra -Wpedantic
     )
@@ -356,7 +370,8 @@ set(server_cases
 )
 foreach(case IN LISTS server_cases)
     add_test(NAME "server.${case}" COMMAND inkhibit_server_tests
-        "${case}" "$<TARGET_FILE:inkhibit-server>" "${PROJECT_SOURCE_DIR}/web")
+        "${case}" "$<TARGET_FILE:inkhibit_server_under_test>"
+        "${PROJECT_SOURCE_DIR}/web")
     set_tests_properties("server.${case}" PROPERTIES TIMEOUT 30)
 endforeach()
 
