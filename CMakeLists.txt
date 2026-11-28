@@ -193,11 +193,11 @@ if(INKHIBIT_BUILD_HARDWARE)
 
     target_include_directories(inkhibit_driver
         PUBLIC
-            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
         PRIVATE
-            "${WAVESHARE_DIR}/Config"
-            "${WAVESHARE_DIR}/e-Paper"
-            "${LGPIO_INCLUDE_DIR}"
+        "${WAVESHARE_DIR}/Config"
+        "${WAVESHARE_DIR}/e-Paper"
+        "${LGPIO_INCLUDE_DIR}"
     )
 
     target_link_libraries(inkhibit_driver PUBLIC
@@ -231,15 +231,50 @@ if(INKHIBIT_BUILD_HARDWARE)
 
     target_include_directories(inkhibit_display
         PUBLIC
-            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
         PRIVATE
-            "${WAVESHARE_DIR}/Config"
-            "${WAVESHARE_DIR}/e-Paper"
+        "${WAVESHARE_DIR}/Config"
+        "${WAVESHARE_DIR}/e-Paper"
     )
 
     target_link_libraries(inkhibit_display PUBLIC
         inkhibit_driver
         inkhibit_framebuffer
+    )
+
+    add_library(inkhibit_rotation_display STATIC
+        src/album/rotation_display.cpp
+    )
+
+    target_compile_features(inkhibit_rotation_display PUBLIC cxx_std_17)
+
+    set_target_properties(inkhibit_rotation_display PROPERTIES
+        CXX_EXTENSIONS OFF
+    )
+
+    target_include_directories(inkhibit_rotation_display PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_link_libraries(inkhibit_rotation_display PRIVATE
+        inkhibit_display
+        inkhibit_image
+        Threads::Threads
+    )
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(inkhibit_rotation_display PRIVATE
+            -Wall -Wextra -Wpedantic
+        )
+
+    endif()
+
+    target_link_libraries(inkhibit-server PRIVATE
+        inkhibit_rotation_display
+    )
+
+    target_compile_definitions(inkhibit-server PRIVATE
+        INKHIBIT_HAS_DISPLAY=1
     )
 
     add_executable(inkhibit-display-test

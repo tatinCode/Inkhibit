@@ -2,9 +2,15 @@
 
 #include "inkhibit/album/store.hpp"
 #include "inkhibit/album/image.hpp"
+#include "inkhibit/album/rotation_worker.hpp"
+
+#ifdef INKHIBIT_HAS_DISPLAY
+#include "inkhibit/album/rotation_display.hpp"
+#endif
 
 #include <httplib.h>
 
+#include <memory>
 #include <atomic>
 #include <exception>
 #include <iostream>
@@ -27,6 +33,45 @@
 #include <time.h>
 
 namespace{
+
+    class RotationThread {
+        public:
+            explicit RotationThread(inkhibit::album::RotationWorker& worker)
+                : worker_(worker),
+                thread_([this] {
+                        try {
+                        worker_.run();
+                        } catch (const std::exception& error) {
+                        std::cerr
+                        << "inkhibit-server: Rotation worker stopped: "
+                        << error.what() << '\n';
+                        } catch (...) {
+                        std::cerr
+                        << "inkhibit-server: Rotation worker stopped "
+                        << "with an unknown error\n";
+                        }
+                        })
+            {
+            }
+
+            ~RotationThread() {
+                stop_and_join();
+            }
+
+            RotationThread(const RotationThread&) = delete;
+            RotationThread& operator=(const RotationThread&) = delete;
+
+            void stop_and_join() {
+                if (thread_.joinable()) {
+                    worker_.request_stop();
+                    thread_.join();
+                }
+            }
+
+        private:
+            inkhibit::album::RotationWorker& worker_;
+            std::thread thread_;
+    };
 
     struct Options {
         std::string bind = "0.0.0.0";
@@ -176,7 +221,9 @@ int main(int argc, char** argv) {
 
     try {
         std::optional<inkhibit::album::AlbumStore> album;
+        std::unique_ptr<inkhibit::album::RotationWorker> rotation;
         httplib::Server server;
+
         inkhibit::configure_server(server, options.web_root);
 
         if (options.album_root) {
@@ -197,6 +244,23 @@ int main(int argc, char** argv) {
             }
 
             album.emplace(album_root);
+
+#ifdef INKHIBIT_HAS_DISPLAY
+            rotation = std::make_unique<inkhibit::album::RotationWorker>(
+                    *album,
+                    album_root,
+                    [album_root](
+                        inkhibit::album::ImageId id,
+                        const std::atomic<bool>& stop_requested) {
+                    return inkhibit::album::display_rotation_image(
+                            album_root, id, stop_requested);
+                    },
+                    [](const std::string& message) {
+                    std::cerr << "inkhibit-server: Rotation: "
+                    << message << '\n';
+                    });
+#endif
+
             const auto host = "127.0.0.1:" + std::to_string(options.port);
 
             server.Get("/api/album",
@@ -226,7 +290,7 @@ int main(int argc, char** argv) {
             server.set_payload_max_length(inkhibit::album::max_png_bytes);
 
             server.Post("/api/album",
-                    [&store = *album, host](const httplib::Request& request,
+                    [&store = *album, host, &rotation](const httplib::Request& request,
                         httplib::Response& response) {
                     if (request.get_header_value("Host") != host) {
                     response.status = 403;
@@ -257,6 +321,10 @@ int main(int argc, char** argv) {
                         return;
                     }
 
+                    if (rotation){
+                        rotation->notify_album_changed();
+                    }
+
                     response.status = 201;
                     response.set_content(
                             "{\"id\":\"" + std::to_string(id) + "\"}\n",
@@ -264,7 +332,7 @@ int main(int argc, char** argv) {
                     });
 
             server.Delete(R"(/api/album/([^/]+))",
-                    [&store = *album, host](const httplib::Request& request,
+                    [&store = *album, host, &rotation](const httplib::Request& request,
                         httplib::Response& response) {
                     if (request.get_header_value("Host") != host) {
                     response.status = 403;
@@ -284,12 +352,18 @@ int main(int argc, char** argv) {
                     }
 
                     try {
-                        response.status = store.remove(id) ? 204 : 404;
+                        const bool removed = store.remove(id);
+                        response.status = removed ? 204 : 404;
+
+                        if (removed && rotation) {
+                            rotation->notify_album_changed();
+                        }
+
                     } catch (const std::exception& error) {
-                        std::cerr << "inkhibit-server: Album deletion failed: "
+                        std::cerr << "inkhibit-server: album deletion failed: "
                             << error.what() << '\n';
                         response.status = 500;
-                        response.set_content("Could not remove album image\n", "text/plain");
+                        response.set_content("could not remove album image\n", "text/plain");
                     }
                     });
         }
@@ -299,6 +373,11 @@ int main(int argc, char** argv) {
                 << "inkhibit-server: Could not listen on "
                 << options.bind << ':' << options.port << '\n';
             return 1;
+        }
+
+        std::optional<RotationThread> rotation_thread;
+        if (rotation) {
+            rotation_thread.emplace(*rotation);
         }
 
         std::atomic<bool> finished{false};
@@ -311,35 +390,49 @@ int main(int argc, char** argv) {
                 const int number = sigtimedwait(&signals, nullptr, &interval);
                 if (number > 0) {
                 received = number;
-                server.stop();
 
+                if (rotation) {
+                rotation->request_stop();
+                }
+
+                server.stop();
                 return;
                 }
                 }
                 });
 
-        std::cout << "Serving " << options.web_root << " on port " << options.port;
-        if (options.bind == "0.0.0.0") {
-            std::cout << " (all network interfaces):\n";
-            for (const auto& url : reachable_urls(options.port)) {
-                std::cout << "  " << url << '\n';
-            }
-        } else {
-            std::cout << " at http://" << options.bind << ':' << options.port << "/\n";
-        }
-        std::cout << "Press Ctrl+C to stop.\n" << std::flush;
 
         bool listened = false;
         std::exception_ptr failure;
 
         try {
+            // prints the link
+            std::cout << "Serving " << options.web_root << " on port " << options.port;
+            if (options.bind == "0.0.0.0") {
+                std::cout << " (all network interfaces):\n";
+                for (const auto& url : reachable_urls(options.port)) {
+                    std::cout << "  " << url << '\n';
+                }
+            } else {
+                std::cout << " at http://" << options.bind << ':' << options.port << "/\n";
+            }
+            std::cout << "Press Ctrl+C to stop.\n" << std::flush;
+
             listened = server.listen_after_bind();
         } catch (...) {
             failure = std::current_exception();
         }
 
+        if (rotation) {
+            rotation->request_stop();
+        }
+
         finished = true;
         waiter.join();
+
+        if (rotation_thread) {
+            rotation_thread->stop_and_join();
+        }
 
         if (failure) {
             std::rethrow_exception(failure);
