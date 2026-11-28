@@ -81,6 +81,40 @@ foreach(case IN LISTS rotation_step_cases)
     set_tests_properties("rotation_step.${case}" PROPERTIES TIMEOUT 30)
 endforeach()
 
+# The real panel adapter and image pipeline, compiled against a fake Display
+# and DisplayGuard. Never touches the panel or /var/lib/inkhibit.
+add_executable(inkhibit_rotation_display_tests
+    rotation_display_tests.cpp
+    fakes/fake_display.cpp
+    "${PROJECT_SOURCE_DIR}/src/album/rotation_display.cpp"
+    "${PROJECT_SOURCE_DIR}/src/display_cooldown.cpp"
+)
+target_include_directories(inkhibit_rotation_display_tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/fakes"
+    "${PROJECT_SOURCE_DIR}/include"
+)
+target_link_libraries(inkhibit_rotation_display_tests PRIVATE
+    inkhibit_image
+    inkhibit_framebuffer
+    Threads::Threads
+)
+target_compile_features(inkhibit_rotation_display_tests PRIVATE cxx_std_17)
+set_target_properties(inkhibit_rotation_display_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_rotation_display_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+
+set(rotation_display_cases
+    success stop_before invalid_image cooldown_retry cooldown_cancel
+    stop_before_refresh stop_during_refresh display_failure
+)
+foreach(case IN LISTS rotation_display_cases)
+    add_test(NAME "rotation_display.${case}"
+        COMMAND inkhibit_rotation_display_tests "${case}")
+    set_tests_properties("rotation_display.${case}" PROPERTIES TIMEOUT 30)
+endforeach()
+
 # Real album store, state file, and worker thread with a fake panel.
 add_executable(inkhibit_rotation_worker_tests rotation_worker_tests.cpp)
 target_link_libraries(inkhibit_rotation_worker_tests PRIVATE
