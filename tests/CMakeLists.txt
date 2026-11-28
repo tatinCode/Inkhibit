@@ -81,6 +81,28 @@ foreach(case IN LISTS rotation_step_cases)
     set_tests_properties("rotation_step.${case}" PROPERTIES TIMEOUT 30)
 endforeach()
 
+# Real album store, state file, and worker thread with a fake panel.
+add_executable(inkhibit_rotation_worker_tests rotation_worker_tests.cpp)
+target_link_libraries(inkhibit_rotation_worker_tests PRIVATE
+    inkhibit_album Threads::Threads)
+target_compile_features(inkhibit_rotation_worker_tests PRIVATE cxx_std_17)
+set_target_properties(inkhibit_rotation_worker_tests PROPERTIES CXX_EXTENSIONS OFF)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(inkhibit_rotation_worker_tests PRIVATE
+        -Wall -Wextra -Wpedantic)
+endif()
+
+set(rotation_worker_cases
+    constructor_validation stop_before_run first_display resume_waiting
+    album_change_wakes stop_cancels_display error_backoff stop_during_backoff
+    corrupt_state
+)
+foreach(case IN LISTS rotation_worker_cases)
+    add_test(NAME "rotation_worker.${case}"
+        COMMAND inkhibit_rotation_worker_tests "${case}")
+    set_tests_properties("rotation_worker.${case}" PROPERTIES TIMEOUT 30)
+endforeach()
+
 add_library(inkhibit_driver_under_test OBJECT
     "${PROJECT_SOURCE_DIR}/src/waveshare_lgpio.c"
     "${WAVESHARE_DIR}/e-Paper/EPD_4in0e.c"
